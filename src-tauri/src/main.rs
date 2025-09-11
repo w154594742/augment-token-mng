@@ -18,6 +18,33 @@ use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
 use tauri::{State, Manager, WebviewWindowBuilder, WebviewUrl};
 use chrono;
+use serde::{Deserialize, Serialize};
+
+// 代理配置结构
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ProxyConfig {
+    enabled: bool,
+    proxy_type: String,  // "http" 或 "socks5"
+    host: String,
+    port: u16,
+    username: Option<String>,
+    password: Option<String>,
+}
+
+
+
+impl Default for ProxyConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            proxy_type: "http".to_string(),
+            host: "127.0.0.1".to_string(),
+            port: 8080,
+            username: None,
+            password: None,
+        }
+    }
+}
 
 // Global state to store OAuth state and storage managers
 struct AppState {
@@ -26,6 +53,61 @@ struct AppState {
     outlook_manager: Mutex<OutlookManager>,
     storage_manager: Arc<Mutex<Option<Arc<DualStorage>>>>,
     database_manager: Arc<Mutex<Option<Arc<DatabaseManager>>>>,
+    proxy_config: Arc<Mutex<ProxyConfig>>,  // 代理配置
+}
+
+// 代理配置文件路径
+fn get_proxy_config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    // 尝试获取应用数据目录，如果失败则使用当前目录
+    let app_data_dir = match app.path().app_data_dir() {
+        Ok(dir) => dir,
+        Err(_) => {
+            // 如果无法获取应用数据目录，使用当前目录下的config文件夹
+            let current_dir = std::env::current_dir()
+                .map_err(|e| format!("Failed to get current dir: {}", e))?;
+            current_dir.join("config")
+        }
+    };
+
+    std::fs::create_dir_all(&app_data_dir)
+        .map_err(|e| format!("Failed to create app data dir: {}", e))?;
+    Ok(app_data_dir.join("proxy_config.json"))
+}
+
+// 创建带代理的HTTP客户端
+fn create_http_client(proxy_config: &ProxyConfig) -> Result<reqwest::Client, String> {
+    let mut builder = reqwest::Client::builder();
+
+    if proxy_config.enabled {
+        let proxy_url = match proxy_config.proxy_type.as_str() {
+            "http" => format!("http://{}:{}", proxy_config.host, proxy_config.port),
+            "socks5" => format!("socks5://{}:{}", proxy_config.host, proxy_config.port),
+            _ => {
+                // 对于不支持的代理类型，返回错误信息
+                return Err("Unsupported proxy type".to_string());
+            }
+        };
+
+        let mut proxy = reqwest::Proxy::all(&proxy_url)
+            .map_err(|e| format!("Failed to create proxy: {}", e))?;
+
+        // 添加认证信息（如果有）
+        if let (Some(username), Some(password)) = (&proxy_config.username, &proxy_config.password) {
+            proxy = proxy.basic_auth(username, password);
+        }
+
+        builder = builder.proxy(proxy);
+    }
+
+    builder.build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))
+}
+
+// 获取配置好代理的HTTP客户端
+fn get_proxy_client(state: &State<AppState>) -> Result<reqwest::Client, String> {
+    let proxy_config = state.proxy_config.lock().unwrap();
+    create_http_client(&proxy_config)
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))
 }
 
 #[tauri::command]
@@ -62,7 +144,8 @@ async fn get_token(code: String, state: State<'_, AppState>) -> Result<AugmentTo
             .ok_or("No Augment OAuth state found. Please generate auth URL first.")?
     };
 
-    complete_augment_oauth_flow(&augment_oauth_state, &code)
+    let client = get_proxy_client(&state)?;
+    complete_augment_oauth_flow(&augment_oauth_state, &code, &client)
         .await
         .map_err(|e| format!("Failed to complete OAuth flow: {}", e))
 }
@@ -75,14 +158,16 @@ async fn get_augment_token(code: String, state: State<'_, AppState>) -> Result<A
             .ok_or("No Augment OAuth state found. Please generate auth URL first.")?
     };
 
-    complete_augment_oauth_flow(&augment_oauth_state, &code)
+    let client = get_proxy_client(&state)?;
+    complete_augment_oauth_flow(&augment_oauth_state, &code, &client)
         .await
         .map_err(|e| format!("Failed to complete Augment OAuth flow: {}", e))
 }
 
 #[tauri::command]
-async fn check_account_status(token: String, tenant_url: String) -> Result<AccountStatus, String> {
-    check_account_ban_status(&token, &tenant_url)
+async fn check_account_status(token: String, tenant_url: String, state: State<'_, AppState>) -> Result<AccountStatus, String> {
+    let client = get_proxy_client(&state)?;
+    check_account_ban_status(&token, &tenant_url, &client)
         .await
         .map_err(|e| format!("Failed to check account status: {}", e))
 }
@@ -384,10 +469,10 @@ async fn close_window(app: tauri::AppHandle, window_label: String) -> Result<(),
 }
 
 #[tauri::command]
-async fn get_customer_info(token: String) -> Result<String, String> {
+async fn get_customer_info(token: String, state: State<'_, AppState>) -> Result<String, String> {
     let url = format!("https://portal.withorb.com/api/v1/customer_from_link?token={}", token);
 
-    let client = reqwest::Client::new();
+    let client = get_proxy_client(&state)?;
     let response = client
         .get(&url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -431,11 +516,11 @@ async fn get_customer_info(token: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn get_ledger_summary(customer_id: String, pricing_unit_id: String, token: String) -> Result<String, String> {
+async fn get_ledger_summary(customer_id: String, pricing_unit_id: String, token: String, state: State<'_, AppState>) -> Result<String, String> {
     let url = format!("https://portal.withorb.com/api/v1/customers/{}/ledger_summary?pricing_unit_id={}&token={}",
                      customer_id, pricing_unit_id, token);
 
-    let client = reqwest::Client::new();
+    let client = get_proxy_client(&state)?;
     let response = client
         .get(&url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -479,10 +564,10 @@ async fn get_ledger_summary(customer_id: String, pricing_unit_id: String, token:
 }
 
 #[tauri::command]
-async fn test_api_call() -> Result<String, String> {
+async fn test_api_call(state: State<'_, AppState>) -> Result<String, String> {
     let url = "https://portal.withorb.com/api/v1/customer_from_link?token=ImRhUHFhU3ZtelpKdEJrUVci.1konHDs_4UqVUJWcxaZpKV4nQik";
 
-    let client = reqwest::Client::new();
+    let client = get_proxy_client(&state)?;
     let response = client
         .get(url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -997,6 +1082,104 @@ async fn get_sync_status(
         .map_err(|e| format!("Failed to get sync status: {}", e))
 }
 
+
+
+// 代理配置相关命令
+#[tauri::command]
+async fn save_proxy_config(
+    enabled: bool,
+    proxy_type: String,
+    host: String,
+    port: u16,
+    username: Option<String>,
+    password: Option<String>,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    println!("save_proxy_config called with: enabled={}, proxy_type={}, host={}, port={}",
+             enabled, proxy_type, host, port);
+
+    // 创建代理配置结构
+    let config = ProxyConfig {
+        enabled,
+        proxy_type,
+        host,
+        port,
+        username,
+        password,
+    };
+
+    // 保存到文件
+    let config_path = get_proxy_config_path(&app)
+        .map_err(|e| format!("Failed to get config path: {}", e))?;
+
+    println!("Saving proxy config to: {:?}", config_path);
+
+    let json = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("Failed to serialize config: {}", e))?;
+
+    std::fs::write(&config_path, json)
+        .map_err(|e| format!("Failed to write config to {:?}: {}", config_path, e))?;
+
+    // 更新内存中的配置
+    *state.proxy_config.lock().unwrap() = config;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn load_proxy_config(app: tauri::AppHandle, _state: State<'_, AppState>) -> Result<ProxyConfig, String> {
+    let config_path = get_proxy_config_path(&app)
+        .map_err(|e| format!("Failed to get config path: {}", e))?;
+
+    if !config_path.exists() {
+        return Ok(ProxyConfig::default());
+    }
+
+    let content = std::fs::read_to_string(&config_path)
+        .map_err(|e| format!("Failed to read config: {}", e))?;
+    let config: ProxyConfig = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse config: {}", e))?;
+
+    Ok(config)
+}
+
+#[tauri::command]
+async fn test_proxy_connection(
+    proxy_type: String,
+    host: String,
+    port: u16,
+    username: Option<String>,
+    password: Option<String>,
+) -> Result<(), String> {
+    // 创建测试用的代理配置结构
+    let test_config = ProxyConfig {
+        enabled: true,
+        proxy_type,
+        host,
+        port,
+        username,
+        password,
+    };
+
+    let client = create_http_client(&test_config)
+        .map_err(|e| format!("Failed to create test client: {}", e))?;
+
+    // 使用httpbin.org测试连接
+    let response = client
+        .get("https://httpbin.org/ip")
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| format!("Proxy connection test failed: {}", e))?;
+
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        Err(format!("Proxy test failed with status: {}", response.status()))
+    }
+}
+
 // 辅助函数：初始化存储管理器
 async fn initialize_storage_manager(
     app: &tauri::AppHandle,
@@ -1037,14 +1220,26 @@ fn main() {
                 outlook_manager: Mutex::new(OutlookManager::new()),
                 storage_manager: Arc::new(Mutex::new(None)),
                 database_manager: Arc::new(Mutex::new(None)),
+                proxy_config: Arc::new(Mutex::new(ProxyConfig::default())),
             };
 
             app.manage(app_state);
 
-            // 异步初始化存储管理器
+            // 异步初始化存储管理器和代理配置
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let state = app_handle.state::<AppState>();
+
+                // 加载代理配置
+                if let Ok(path) = get_proxy_config_path(&app_handle) {
+                    if path.exists() {
+                        if let Ok(content) = std::fs::read_to_string(&path) {
+                            if let Ok(proxy_config) = serde_json::from_str::<ProxyConfig>(&content) {
+                                *state.proxy_config.lock().unwrap() = proxy_config;
+                            }
+                        }
+                    }
+                }
 
                 // 尝试加载数据库配置
                 let mut should_sync = false;
@@ -1174,6 +1369,10 @@ fn main() {
             bidirectional_sync_tokens,
             get_storage_status,
             get_sync_status,
+            // 代理配置命令
+            save_proxy_config,
+            load_proxy_config,
+            test_proxy_connection,
 
             open_internal_browser,
             close_window

@@ -35,6 +35,13 @@
           邮箱管理
         </button>
 
+        <button @click="showProxyConfig = true" class="btn info">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12,3C7.58,3 4,6.58 4,11C4,14.03 5.53,16.68 7.91,18.09L9.5,16.5C8,15.44 7,13.85 7,12C7,8.13 10.13,5 14,5C17.87,5 21,8.13 21,12C21,13.85 20,15.44 18.5,16.5L20.09,18.09C22.47,16.68 24,14.03 24,11C24,6.58 20.42,3 16,3H12Z"/>
+          </svg>
+          代理设置
+        </button>
+
         <button @click="showTokenList = true" class="btn primary">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
             <path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/>
@@ -278,6 +285,14 @@
       @show-status="showStatus"
     />
 
+    <!-- Proxy Config Modal -->
+    <ProxyConfig
+      v-if="showProxyConfig"
+      @close="showProxyConfig = false"
+      @show-status="showStatus"
+      @config-saved="handleProxyConfigSaved"
+    />
+
 
 
     <!-- Status Messages -->
@@ -379,6 +394,7 @@ import TokenList from './components/TokenList.vue'
 import TokenForm from './components/TokenForm.vue'
 import BookmarkManager from './components/BookmarkManager.vue'
 import OutlookManager from './components/OutlookManager.vue'
+import ProxyConfig from './components/ProxyConfig.vue'
 
 // 简化的状态管理
 const tokens = ref([])
@@ -386,6 +402,7 @@ const isLoading = ref(false)
 const showTokenList = ref(false)
 const showBookmarkManager = ref(false)
 const showOutlookManager = ref(false)
+const showProxyConfig = ref(false)
 const statusMessage = ref('')
 const statusType = ref('info')
 const hasUnsavedChanges = ref(false)
@@ -463,6 +480,14 @@ const showStatus = (message, type = 'info') => {
 const loadTokens = async (showSuccessMessage = false) => {
   isLoading.value = true
   try {
+    // 检查invoke函数是否可用
+    if (typeof invoke === 'undefined') {
+      console.warn('Tauri API not yet available, skipping token loading')
+      tokens.value = []
+      hasUnsavedChanges.value = false
+      return
+    }
+
     const jsonString = await invoke('load_tokens_json')
     tokens.value = JSON.parse(jsonString)
     hasUnsavedChanges.value = false
@@ -470,6 +495,7 @@ const loadTokens = async (showSuccessMessage = false) => {
       showStatus('Token加载成功', 'success')
     }
   } catch (error) {
+    console.error('Failed to load tokens:', error)
     showStatus(`加载Token失败: ${error}`, 'error')
     tokens.value = []
     hasUnsavedChanges.value = false
@@ -832,6 +858,13 @@ const openPluginHomeInternal = async () => {
 // 获取初始存储状态
 const getInitialStorageStatus = async () => {
   try {
+    // 检查invoke函数是否可用
+    if (typeof invoke === 'undefined') {
+      console.warn('Tauri API not yet available, skipping storage status check')
+      isDatabaseAvailable.value = false
+      return
+    }
+
     const status = await invoke('get_storage_status')
     isDatabaseAvailable.value = status?.is_database_available || false
   } catch (error) {
@@ -845,12 +878,27 @@ const handleStorageConfigChanged = async () => {
   await getInitialStorageStatus()
 }
 
+// 处理代理配置保存
+const handleProxyConfigSaved = () => {
+  // 代理配置保存后的处理逻辑
+  // 目前只需要显示成功消息，实际的代理应用在后端处理
+}
+
 // Initialize
 onMounted(async () => {
-  // 首先获取存储状态
-  await getInitialStorageStatus()
-  // 然后加载tokens
-  await loadTokens()
+  try {
+    // 等待一小段时间确保Tauri API完全初始化
+    await new Promise(resolve => setTimeout(resolve, 100))
+
+    // 首先获取存储状态
+    await getInitialStorageStatus()
+    // 然后加载tokens
+    await loadTokens()
+  } catch (error) {
+    console.error('Failed to initialize app:', error)
+    // 即使初始化失败，也要确保基本功能可用
+    isDatabaseAvailable.value = false
+  }
 })
 
 

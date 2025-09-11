@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::Utc;
+
 use imap::Session;
 use native_tls::TlsStream;
 use std::net::TcpStream;
@@ -503,7 +503,7 @@ impl OutlookManager {
     fn extract_part_content(part: &str) -> Option<String> {
         let lines: Vec<&str> = part.lines().collect();
         let mut content_start = 0;
-        let mut in_headers = true;
+        let in_headers = true;
 
         // 找到空行，表示头部结束
         for (i, line) in lines.iter().enumerate() {
