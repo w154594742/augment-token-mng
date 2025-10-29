@@ -33,8 +33,12 @@ pub async fn create_tables(client: &Client) -> Result<(), Box<dyn std::error::Er
             updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
             portal_url TEXT,
             email_note TEXT,
+            tag_name TEXT,
+            tag_color TEXT,
             ban_status JSONB,
-            portal_info JSONB
+            portal_info JSONB,
+            auth_session TEXT,
+            suspensions JSONB
         )
         "#,
         &[],
@@ -67,19 +71,9 @@ pub async fn create_tables(client: &Client) -> Result<(), Box<dyn std::error::Er
         &[],
     ).await?;
 
-    // 创建updated_at触发器函数
-    client.execute(
-        r#"
-        CREATE OR REPLACE FUNCTION update_updated_at_column()
-        RETURNS TRIGGER AS $$
-        BEGIN
-            NEW.updated_at = NOW();
-            RETURN NEW;
-        END;
-        $$ language 'plpgsql'
-        "#,
-        &[],
-    ).await?;
+    // 注释掉自动更新 updated_at 的触发器
+    // 因为我们需要在双向同步时保留原始的 updated_at 时间戳
+    // 应用层会负责更新 updated_at
 
     // 删除现有触发器（如果存在）
     client.execute(
@@ -87,14 +81,9 @@ pub async fn create_tables(client: &Client) -> Result<(), Box<dyn std::error::Er
         &[],
     ).await?;
 
-    // 为tokens表创建触发器
+    // 删除触发器函数（如果存在）
     client.execute(
-        r#"
-        CREATE TRIGGER update_tokens_updated_at
-            BEFORE UPDATE ON tokens
-            FOR EACH ROW
-            EXECUTE FUNCTION update_updated_at_column()
-        "#,
+        "DROP FUNCTION IF EXISTS update_updated_at_column() CASCADE",
         &[],
     ).await?;
 
@@ -105,6 +94,173 @@ pub async fn drop_tables(client: &Client) -> Result<(), Box<dyn std::error::Erro
     client.execute("DROP TABLE IF EXISTS sync_status CASCADE", &[]).await?;
     client.execute("DROP TABLE IF EXISTS tokens CASCADE", &[]).await?;
     client.execute("DROP FUNCTION IF EXISTS update_updated_at_column() CASCADE", &[]).await?;
+    Ok(())
+}
+
+// 添加新字段的迁移函数
+pub async fn add_new_fields_if_not_exist(client: &Client) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // 检查 auth_session 字段是否存在
+    let auth_session_exists = client.query(
+        r#"
+        SELECT EXISTS (
+            SELECT FROM information_schema.columns
+            WHERE table_schema = 'public'
+            AND table_name = 'tokens'
+            AND column_name = 'auth_session'
+        )
+        "#,
+        &[],
+    ).await?;
+
+    if let Some(row) = auth_session_exists.first() {
+        let exists: bool = row.get(0);
+        if !exists {
+            client.execute(
+                "ALTER TABLE tokens ADD COLUMN auth_session TEXT",
+                &[],
+            ).await?;
+            println!("Added auth_session column to tokens table");
+        }
+    }
+
+    // 检查 suspensions 字段是否存在
+    let suspensions_exists = client.query(
+        r#"
+        SELECT EXISTS (
+            SELECT FROM information_schema.columns
+            WHERE table_schema = 'public'
+            AND table_name = 'tokens'
+            AND column_name = 'suspensions'
+        )
+        "#,
+        &[],
+    ).await?;
+
+    if let Some(row) = suspensions_exists.first() {
+        let exists: bool = row.get(0);
+        if !exists {
+            client.execute(
+                "ALTER TABLE tokens ADD COLUMN suspensions JSONB",
+                &[],
+            ).await?;
+            println!("Added suspensions column to tokens table");
+        }
+    }
+
+    // 检查 tag_name 字段是否存在
+    let tag_name_exists = client.query(
+        r#"
+        SELECT EXISTS (
+            SELECT FROM information_schema.columns
+            WHERE table_schema = 'public'
+            AND table_name = 'tokens'
+            AND column_name = 'tag_name'
+        )
+        "#,
+        &[],
+    ).await?;
+
+    if let Some(row) = tag_name_exists.first() {
+        let exists: bool = row.get(0);
+        if !exists {
+            client.execute(
+                "ALTER TABLE tokens ADD COLUMN tag_name TEXT",
+                &[],
+            ).await?;
+            println!("Added tag_name column to tokens table");
+        }
+    }
+
+    // 检查 tag_color 字段是否存在
+    let tag_color_exists = client.query(
+        r#"
+        SELECT EXISTS (
+            SELECT FROM information_schema.columns
+            WHERE table_schema = 'public'
+            AND table_name = 'tokens'
+            AND column_name = 'tag_color'
+        )
+        "#,
+        &[],
+    ).await?;
+
+    if let Some(row) = tag_color_exists.first() {
+        let exists: bool = row.get(0);
+        if !exists {
+            client.execute(
+                "ALTER TABLE tokens ADD COLUMN tag_color TEXT",
+                &[],
+            ).await?;
+            println!("Added tag_color column to tokens table");
+        }
+    }
+
+    // 检查 balance_color_mode 字段是否存在
+    let balance_color_mode_exists = client.query(
+        r#"
+        SELECT EXISTS (
+            SELECT FROM information_schema.columns
+            WHERE table_schema = 'public'
+            AND table_name = 'tokens'
+            AND column_name = 'balance_color_mode'
+        )
+        "#,
+        &[],
+    ).await?;
+
+    if let Some(row) = balance_color_mode_exists.first() {
+        let exists: bool = row.get(0);
+        if !exists {
+            client.execute(
+                "ALTER TABLE tokens ADD COLUMN balance_color_mode TEXT",
+                &[],
+            ).await?;
+            println!("Added balance_color_mode column to tokens table");
+        }
+    }
+
+    // 检查 skip_check 字段是否存在
+    let skip_check_exists = client.query(
+        r#"
+        SELECT EXISTS (
+            SELECT FROM information_schema.columns
+            WHERE table_schema = 'public'
+            AND table_name = 'tokens'
+            AND column_name = 'skip_check'
+        )
+        "#,
+        &[],
+    ).await?;
+
+    if let Some(row) = skip_check_exists.first() {
+        let exists: bool = row.get(0);
+        if !exists {
+            client.execute(
+                "ALTER TABLE tokens ADD COLUMN skip_check BOOLEAN",
+                &[],
+            ).await?;
+            println!("Added skip_check column to tokens table");
+        }
+    }
+
+    Ok(())
+}
+
+// 删除 updated_at 自动更新触发器的迁移函数
+pub async fn remove_updated_at_trigger(client: &Client) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // 删除触发器（如果存在）
+    client.execute(
+        "DROP TRIGGER IF EXISTS update_tokens_updated_at ON tokens",
+        &[],
+    ).await?;
+
+    // 删除触发器函数（如果存在）
+    client.execute(
+        "DROP FUNCTION IF EXISTS update_updated_at_column() CASCADE",
+        &[],
+    ).await?;
+
+    println!("Removed updated_at trigger and function");
     Ok(())
 }
 

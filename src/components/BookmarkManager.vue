@@ -3,14 +3,14 @@
     <div class="modal-overlay">
       <div class="modal-content" @click.stop>
         <div class="modal-header">
-          <h2>书签管理</h2>
+          <h2>{{ $t('bookmarkManager.title') }}</h2>
           <div class="header-actions">
-            <button @click="openDataFolder" class="btn-icon info" title="打开数据存储文件夹">
+            <button @click="openDataFolder" class="btn-icon info" :title="$t('bookmarkManager.openDataFolder')">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M10 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2h-8l-2-2z"/>
               </svg>
             </button>
-            <button @click="showAddForm()" class="btn-icon add" title="添加书签">
+            <button @click="showAddForm()" class="btn-icon add" :title="$t('bookmarkManager.addBookmark')">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
               </svg>
@@ -28,12 +28,12 @@
               class="bookmark-card"
             >
               <div class="bookmark-actions">
-                <button @click="editBookmark(bookmark)" class="btn-icon edit" title="编辑">
+                <button @click="editBookmark(bookmark)" class="btn-icon edit" :title="$t('bookmarkManager.editBookmark')">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
                   </svg>
                 </button>
-                <button @click="deleteBookmark(bookmark.id)" class="btn-icon delete" title="删除">
+                <button @click="deleteBookmark(bookmark.id)" class="btn-icon delete" :title="$t('bookmarkManager.deleteBookmark')">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
                   </svg>
@@ -64,8 +64,8 @@
           </div>
 
           <div v-if="allBookmarks.length === 0" class="empty-state">
-            <p>还没有添加书签</p>
-            <p>点击"添加书签"来添加你常用的网站</p>
+            <p>{{ $t('bookmarkManager.emptyState') }}</p>
+            <p>{{ $t('bookmarkManager.emptyDescription') }}</p>
           </div>
         </div>
 
@@ -73,108 +73,80 @@
         <div v-if="showForm" class="form-overlay">
           <div class="form-content" @click.stop>
             <div class="form-header">
-              <h3>{{ editingBookmark ? '编辑书签' : '添加书签' }}</h3>
+              <h3>{{ editingBookmark ? $t('bookmarkManager.editBookmark') : $t('bookmarkManager.addBookmark') }}</h3>
               <button class="close-btn" @click="hideForm">×</button>
             </div>
             
             <div class="form-body">
               <div class="form-group">
-                <label>名称 *</label>
-                <input 
-                  v-model="formData.name" 
-                  type="text" 
-                  placeholder="输入书签名称"
+                <label>{{ $t('bookmarkManager.form.name') }} *</label>
+                <input
+                  v-model="formData.name"
+                  type="text"
+                  :placeholder="$t('bookmarkManager.form.name')"
                   required
                 >
               </div>
-              
+
               <div class="form-group">
-                <label>网址 *</label>
-                <input 
-                  v-model="formData.url" 
-                  type="url" 
+                <label>{{ $t('bookmarkManager.form.url') }} *</label>
+                <input
+                  v-model="formData.url"
+                  type="url"
                   placeholder="https://example.com"
                   required
                 >
               </div>
-              
+
               <div class="form-group">
-                <label>描述</label>
-                <textarea 
-                  v-model="formData.description" 
-                  placeholder="可选的描述信息"
+                <label>{{ $t('bookmarkManager.form.description') }}</label>
+                <textarea
+                  v-model="formData.description"
+                  :placeholder="$t('bookmarkManager.form.description')"
                   rows="2"
                 ></textarea>
               </div>
-              
+
               <div class="form-actions">
-                <button @click="hideForm" class="btn secondary">取消</button>
+                <button @click="hideForm" class="btn secondary">{{ $t('bookmarkManager.form.cancel') }}</button>
                 <button @click="saveBookmark" class="btn primary" :disabled="!canSave">
-                  {{ editingBookmark ? '更新' : '添加' }}
+                  {{ editingBookmark ? $t('bookmarkManager.form.save') : $t('bookmarkManager.form.save') }}
                 </button>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Status Messages -->
-        <div
-          v-if="statusMessage"
-          :class="['status', statusType]"
-        >
-          {{ statusMessage }}
-        </div>
       </div>
     </div>
 
-    <!-- 书签打开方式选择对话框 -->
-    <div v-if="showBookmarkDialog" class="portal-dialog-overlay" @click="showBookmarkDialog = false">
-      <div class="portal-dialog" @click.stop>
-        <h3>选择打开方式</h3>
-        <div class="dialog-buttons">
-          <button @click="copyBookmarkUrl" class="dialog-btn copy">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
-            </svg>
-            复制到剪贴板
-          </button>
-          <button @click="openBookmarkExternal" class="dialog-btn external">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/>
-            </svg>
-            在浏览器中打开
-          </button>
-          <button @click="openBookmarkInternal" class="dialog-btn internal">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M19 4H5c-1.11 0-2 .9-2 2v12c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm-5 14H5V8h9v10z"/>
-            </svg>
-            内置浏览器打开
-          </button>
-          <button @click="showBookmarkDialog = false" class="dialog-btn cancel">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-            </svg>
-            取消
-          </button>
-        </div>
-      </div>
-    </div>
+    <!-- 书签链接对话框 -->
+    <ExternalLinkDialog
+      :show="showBookmarkDialog"
+      :title="$t('bookmarkManager.dialog.selectOpenMethod')"
+      :url="currentBookmark?.url || ''"
+      :browser-title="currentBookmark?.name || ''"
+      @close="showBookmarkDialog = false"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { useI18n } from 'vue-i18n'
+import ExternalLinkDialog from './ExternalLinkDialog.vue'
 
 // Emits
 const emit = defineEmits(['close'])
+
+// i18n
+const { t } = useI18n()
 
 // Reactive data
 const allBookmarks = ref([])
 const showForm = ref(false)
 const editingBookmark = ref(null)
-const statusMessage = ref('')
-const statusType = ref('info')
 
 // Bookmark dialog
 const showBookmarkDialog = ref(false)
@@ -193,12 +165,7 @@ const canSave = computed(() => {
 
 // Methods
 const showStatus = (message, type = 'info') => {
-  statusMessage.value = message
-  statusType.value = type
-  
-  setTimeout(() => {
-    statusMessage.value = ''
-  }, 3000)
+  window.$notify[type](message)
 }
 
 const loadBookmarks = async () => {
@@ -256,10 +223,10 @@ const saveBookmark = async () => {
         id: editingBookmark.value.id,
         ...bookmarkData
       })
-      showStatus('书签更新成功!', 'success')
+      showStatus(t('bookmarkManager.messages.updateSuccess'), 'success')
     } else {
       await invoke('add_bookmark', bookmarkData)
-      showStatus('书签添加成功!', 'success')
+      showStatus(t('bookmarkManager.messages.addSuccess'), 'success')
     }
 
     await loadBookmarks()
@@ -275,9 +242,9 @@ const deleteBookmark = async (id) => {
   try {
     await invoke('delete_bookmark', { id })
     await loadBookmarks()
-    showStatus('书签删除成功!', 'success')
+    showStatus(t('bookmarkManager.messages.deleteSuccess'), 'success')
   } catch (error) {
-    showStatus(`删除书签失败: ${error}`, 'error')
+    showStatus(`${t('bookmarkManager.messages.deleteSuccess')}: ${error}`, 'error')
   }
 }
 
@@ -287,51 +254,13 @@ const handleBookmarkAction = (bookmark) => {
   showBookmarkDialog.value = true
 }
 
-const copyBookmarkUrl = async () => {
-  showBookmarkDialog.value = false
-  if (!currentBookmark.value) return
-
-  try {
-    await navigator.clipboard.writeText(currentBookmark.value.url)
-    showStatus('URL已复制到剪贴板!', 'success')
-  } catch (error) {
-    showStatus('复制URL失败', 'error')
-  }
-}
-
-const openBookmarkExternal = async () => {
-  showBookmarkDialog.value = false
-  if (!currentBookmark.value) return
-
-  try {
-    await invoke('open_url', { url: currentBookmark.value.url })
-    showStatus('正在浏览器中打开...', 'info')
-  } catch (error) {
-    showStatus(`打开网址失败: ${error}`, 'error')
-  }
-}
-
-const openBookmarkInternal = async () => {
-  showBookmarkDialog.value = false
-  if (!currentBookmark.value) return
-
-  try {
-    await invoke('open_internal_browser', {
-      url: currentBookmark.value.url,
-      title: currentBookmark.value.name || '内置浏览器'
-    })
-    showStatus('已在内置浏览器中打开', 'info')
-  } catch (error) {
-    showStatus(`打开内置浏览器失败: ${error}`, 'error')
-  }
-}
 
 const openDataFolder = async () => {
   try {
     await invoke('open_data_folder')
     // 静默执行，不显示状态提示
   } catch (error) {
-    showStatus(`打开文件夹失败: ${error}`, 'error')
+    showStatus(`${t('bookmarkManager.messages.openFolderFailed')}: ${error}`, 'error')
   }
 }
 
@@ -349,7 +278,7 @@ onMounted(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 1000;
+  z-index: 2000;
 }
 
 /* 隐藏表单弹窗的滚动条 */
@@ -376,7 +305,7 @@ onMounted(() => {
 }
 
 .modal-content {
-  background: white;
+  background: var(--color-surface, #ffffff);
   border-radius: 12px;
   width: 100%;
   max-width: 900px;
@@ -398,7 +327,7 @@ onMounted(() => {
 
 .modal-header h2 {
   margin: 0;
-  color: #333;
+  color: var(--color-text-heading, #333);
 }
 
 .header-actions {
@@ -412,7 +341,7 @@ onMounted(() => {
   border: none;
   font-size: 24px;
   cursor: pointer;
-  color: #666;
+  color: var(--color-text-muted, #666);
   padding: 0;
   width: 30px;
   height: 30px;
@@ -422,27 +351,27 @@ onMounted(() => {
 }
 
 .close-btn:hover {
-  color: #333;
+  color: var(--color-text-heading, #333);
 }
 
 .btn-icon.info {
-  background: #f8f9fa;
-  color: #007bff;
+  background: var(--color-surface-muted, #f8f9fa);
+  color: var(--color-blue-primary, #007bff);
 }
 
 .btn-icon.info:hover {
-  background: #e9ecef;
-  color: #0056b3;
+  background: var(--color-surface-muted, #e9ecef);
+  color: var(--color-blue-primary-hover, #0056b3);
 }
 
 .btn-icon.add {
-  background: #f8f9fa;
-  color: #28a745;
+  background: var(--color-surface-muted, #f8f9fa);
+  color: var(--color-success-bg, #28a745);
 }
 
 .btn-icon.add:hover {
-  background: #e9ecef;
-  color: #1e7e34;
+  background: var(--color-surface-muted, #e9ecef);
+  color: var(--color-success-bg-hover, #1e7e34);
 }
 
 .modal-body {
@@ -466,9 +395,9 @@ onMounted(() => {
 .bookmark-card {
   position: relative;
   aspect-ratio: 1;
-  border: 1px solid #e1e5e9;
+  border: 1px solid var(--color-divider, #e1e5e9);
   border-radius: 12px;
-  background: white;
+  background: var(--color-surface, #ffffff);
   transition: all 0.2s;
   overflow: hidden;
   display: flex;
@@ -476,7 +405,7 @@ onMounted(() => {
 }
 
 .bookmark-card:hover {
-  border-color: #007bff;
+  border-color: var(--color-blue-primary, #007bff);
   box-shadow: 0 4px 12px rgba(0, 123, 255, 0.15);
   transform: translateY(-2px);
 }
@@ -508,13 +437,13 @@ onMounted(() => {
 
 .bookmark-icon {
   margin-bottom: 8px;
-  color: #007bff;
+  color: var(--color-blue-primary, #007bff);
   opacity: 0.8;
 }
 
 .bookmark-name {
   font-weight: 600;
-  color: #333;
+  color: var(--color-text-heading, #333);
   font-size: 13px;
   line-height: 1.3;
   margin-bottom: 4px;
@@ -526,7 +455,7 @@ onMounted(() => {
 }
 
 .bookmark-desc {
-  color: #666;
+  color: var(--color-text-muted, #666);
   font-size: 11px;
   line-height: 1.3;
   display: -webkit-box;
@@ -554,13 +483,13 @@ onMounted(() => {
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
-  background: #007bff;
-  color: white;
+  background: var(--color-blue-primary, #007bff);
+  color: var(--color-text-inverse, #ffffff);
   min-width: 60px;
 }
 
 .bookmark-open-btn:hover {
-  background: #0056b3;
+  background: var(--color-blue-primary-hover, #0056b3);
   transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(0, 123, 255, 0.3);
 }
@@ -579,17 +508,17 @@ onMounted(() => {
 }
 
 .btn-small.primary {
-  background: #007bff;
-  color: white;
+  background: var(--color-blue-primary, #007bff);
+  color: var(--color-text-inverse, #ffffff);
 }
 
 .btn-small.primary:hover {
-  background: #0056b3;
+  background: var(--color-blue-primary-hover, #0056b3);
 }
 
 .btn-small.secondary {
-  background: #6c757d;
-  color: white;
+  background: var(--color-text-muted, #6c757d);
+  color: var(--color-text-inverse, #ffffff);
 }
 
 .btn-small.secondary:hover {
@@ -611,32 +540,32 @@ onMounted(() => {
 
 .btn-icon.edit {
   background: rgba(255, 255, 255, 0.9);
-  color: #6c757d;
+  color: var(--color-text-muted, #6c757d);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .btn-icon.edit:hover {
   background: rgba(233, 236, 239, 0.95);
-  color: #495057;
+  color: var(--color-text-secondary, #495057);
   transform: scale(1.1);
 }
 
 .btn-icon.delete {
   background: rgba(255, 255, 255, 0.9);
-  color: #dc3545;
+  color: var(--color-danger-bg, #dc3545);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .btn-icon.delete:hover {
   background: rgba(245, 198, 203, 0.95);
-  color: #721c24;
+  color: var(--color-danger-text, #721c24);
   transform: scale(1.1);
 }
 
 .empty-state {
   text-align: center;
   padding: 40px 20px;
-  color: #666;
+  color: var(--color-text-muted, #666);
   grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
@@ -653,7 +582,7 @@ onMounted(() => {
 .empty-state p:first-child {
   font-size: 18px;
   font-weight: 500;
-  color: #333;
+  color: var(--color-text-heading, #333);
 }
 
 /* Form Modal Styles */
@@ -671,7 +600,7 @@ onMounted(() => {
 }
 
 .form-content {
-  background: white;
+  background: var(--color-surface, #ffffff);
   border-radius: 8px;
   width: 90%;
   max-width: 500px;
@@ -692,7 +621,7 @@ onMounted(() => {
 
 .form-header h3 {
   margin: 0;
-  color: #333;
+  color: var(--color-text-heading, #333);
   font-size: 18px;
 }
 
@@ -710,7 +639,7 @@ onMounted(() => {
   display: block;
   margin-bottom: 8px;
   font-weight: 500;
-  color: #333;
+  color: var(--color-text-heading, #333);
   font-size: 14px;
 }
 
@@ -718,17 +647,19 @@ onMounted(() => {
 .form-group textarea {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--color-btn-secondary-border, #ddd);
   border-radius: 4px;
   font-size: 14px;
   transition: border-color 0.2s;
   box-sizing: border-box;
+  background: var(--color-surface, #ffffff);
+  color: var(--color-text-primary, #374151);
 }
 
 .form-group input:focus,
 .form-group textarea:focus {
   outline: none;
-  border-color: #007bff;
+  border-color: var(--color-blue-primary, #007bff);
   box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.1);
 }
 
@@ -762,17 +693,17 @@ onMounted(() => {
 }
 
 .btn.primary {
-  background: #007bff;
-  color: white;
+  background: var(--color-blue-primary, #007bff);
+  color: var(--color-text-inverse, #ffffff);
 }
 
 .btn.primary:hover:not(:disabled) {
-  background: #0056b3;
+  background: var(--color-blue-primary-hover, #0056b3);
 }
 
 .btn.secondary {
-  background: #6c757d;
-  color: white;
+  background: var(--color-text-muted, #6c757d);
+  color: var(--color-text-inverse, #ffffff);
 }
 
 .btn.secondary:hover {
@@ -797,21 +728,21 @@ onMounted(() => {
 }
 
 .status.info {
-  background: #d1ecf1;
-  color: #0c5460;
-  border: 1px solid #bee5eb;
+  background: var(--color-info-surface, #d1ecf1);
+  color: var(--color-info-text, #0c5460);
+  border: 1px solid var(--color-info-border, #bee5eb);
 }
 
 .status.success {
-  background: #d4edda;
-  color: #155724;
-  border: 1px solid #c3e6cb;
+  background: var(--color-success-surface, #d4edda);
+  color: var(--color-success-text, #155724);
+  border: 1px solid var(--color-success-border, #c3e6cb);
 }
 
 .status.error {
-  background: #f8d7da;
-  color: #721c24;
-  border: 1px solid #f5c6cb;
+  background: var(--color-danger-surface, #f8d7da);
+  color: var(--color-danger-text, #721c24);
+  border: 1px solid var(--color-danger-border, #f5c6cb);
 }
 
 /* Responsive Design */
@@ -886,7 +817,7 @@ onMounted(() => {
 }
 
 .portal-dialog {
-  background: white;
+  background: var(--color-surface, #ffffff);
   border-radius: 12px;
   padding: 24px;
   min-width: 320px;
@@ -897,7 +828,7 @@ onMounted(() => {
 
 .portal-dialog h3 {
   margin: 0 0 20px 0;
-  color: #333;
+  color: var(--color-text-heading, #333);
   font-size: 18px;
   font-weight: 600;
 }
@@ -924,28 +855,28 @@ onMounted(() => {
 }
 
 .dialog-btn.copy {
-  background: #28a745;
-  color: white;
+  background: var(--color-success-bg, #28a745);
+  color: var(--color-text-inverse, #ffffff);
 }
 
 .dialog-btn.copy:hover {
-  background: #218838;
+  background: var(--color-success-bg-hover, #218838);
   transform: translateY(-1px);
 }
 
 .dialog-btn.external {
-  background: #007bff;
-  color: white;
+  background: var(--color-blue-primary, #007bff);
+  color: var(--color-text-inverse, #ffffff);
 }
 
 .dialog-btn.external:hover {
-  background: #0056b3;
+  background: var(--color-blue-primary-hover, #0056b3);
   transform: translateY(-1px);
 }
 
 .dialog-btn.internal {
-  background: #6c757d;
-  color: white;
+  background: var(--color-text-muted, #6c757d);
+  color: var(--color-text-inverse, #ffffff);
 }
 
 .dialog-btn.internal:hover {
@@ -954,13 +885,13 @@ onMounted(() => {
 }
 
 .dialog-btn.cancel {
-  background: #f8f9fa;
-  color: #6c757d;
-  border: 1px solid #dee2e6;
+  background: var(--color-surface-muted, #f8f9fa);
+  color: var(--color-text-muted, #6c757d);
+  border: 1px solid var(--color-border-strong, #dee2e6);
 }
 
 .dialog-btn.cancel:hover {
-  background: #e9ecef;
-  color: #495057;
+  background: var(--color-surface-muted, #e9ecef);
+  color: var(--color-text-secondary, #495057);
 }
 </style>

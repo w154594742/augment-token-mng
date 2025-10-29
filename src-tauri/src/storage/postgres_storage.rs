@@ -1,7 +1,6 @@
 use super::traits::{TokenStorage, TokenData};
 use crate::database::{DatabaseManager, DbPool};
 use std::sync::Arc;
-use chrono::Utc;
 
 pub struct PostgreSQLStorage {
     pub db_manager: Arc<DatabaseManager>,
@@ -25,18 +24,26 @@ impl TokenStorage for PostgreSQLStorage {
         let client = pool.get().await?;
 
         // 使用UPSERT (INSERT ... ON CONFLICT)
+        // 注意：我们需要保留传入的 updated_at，而不是让触发器自动更新
+        // 因此在 UPDATE 时显式设置 updated_at，触发器会被这个值覆盖
         client.execute(
             r#"
-            INSERT INTO tokens (id, tenant_url, access_token, created_at, updated_at, portal_url, email_note, ban_status, portal_info)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            INSERT INTO tokens (id, tenant_url, access_token, created_at, updated_at, portal_url, email_note, tag_name, tag_color, ban_status, portal_info, auth_session, suspensions, balance_color_mode, skip_check)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             ON CONFLICT (id) DO UPDATE SET
                 tenant_url = EXCLUDED.tenant_url,
                 access_token = EXCLUDED.access_token,
                 updated_at = EXCLUDED.updated_at,
                 portal_url = EXCLUDED.portal_url,
                 email_note = EXCLUDED.email_note,
+                tag_name = EXCLUDED.tag_name,
+                tag_color = EXCLUDED.tag_color,
                 ban_status = EXCLUDED.ban_status,
-                portal_info = EXCLUDED.portal_info
+                portal_info = EXCLUDED.portal_info,
+                auth_session = EXCLUDED.auth_session,
+                suspensions = EXCLUDED.suspensions,
+                balance_color_mode = EXCLUDED.balance_color_mode,
+                skip_check = EXCLUDED.skip_check
             "#,
             &[
                 &token.id,
@@ -46,8 +53,14 @@ impl TokenStorage for PostgreSQLStorage {
                 &token.updated_at,
                 &token.portal_url,
                 &token.email_note,
+                &token.tag_name,
+                &token.tag_color,
                 &token.ban_status,
                 &token.portal_info,
+                &token.auth_session,
+                &token.suspensions,
+                &token.balance_color_mode,
+                &token.skip_check,
             ],
         ).await?;
 
@@ -59,7 +72,7 @@ impl TokenStorage for PostgreSQLStorage {
         let client = pool.get().await?;
 
         let rows = client.query(
-            "SELECT id, tenant_url, access_token, created_at, updated_at, portal_url, email_note, ban_status, portal_info FROM tokens ORDER BY created_at DESC",
+            "SELECT id, tenant_url, access_token, created_at, updated_at, portal_url, email_note, tag_name, tag_color, ban_status, portal_info, auth_session, suspensions, balance_color_mode, skip_check FROM tokens ORDER BY created_at DESC",
             &[],
         ).await?;
 
@@ -73,8 +86,14 @@ impl TokenStorage for PostgreSQLStorage {
                 updated_at: row.get(4),
                 portal_url: row.get(5),
                 email_note: row.get(6),
-                ban_status: row.get(7),
-                portal_info: row.get(8),
+                tag_name: row.get(7),
+                tag_color: row.get(8),
+                ban_status: row.get(9),
+                portal_info: row.get(10),
+                auth_session: row.get(11),
+                suspensions: row.get(12),
+                balance_color_mode: row.get(13),
+                skip_check: row.get(14),
             };
             tokens.push(token);
         }
@@ -86,7 +105,8 @@ impl TokenStorage for PostgreSQLStorage {
         let pool = self.get_pool().await?;
         let client = pool.get().await?;
 
-        let updated_at = Utc::now();
+        // 使用 token 中的 updated_at，而不是自动生成新的时间戳
+        // 这样可以保持双向同步时的时间戳一致性
         let rows_affected = client.execute(
             r#"
             UPDATE tokens SET
@@ -95,19 +115,31 @@ impl TokenStorage for PostgreSQLStorage {
                 updated_at = $4,
                 portal_url = $5,
                 email_note = $6,
-                ban_status = $7,
-                portal_info = $8
+                tag_name = $7,
+                tag_color = $8,
+                ban_status = $9,
+                portal_info = $10,
+                auth_session = $11,
+                suspensions = $12,
+                balance_color_mode = $13,
+                skip_check = $14
             WHERE id = $1
             "#,
             &[
                 &token.id,
                 &token.tenant_url,
                 &token.access_token,
-                &updated_at,
+                &token.updated_at,
                 &token.portal_url,
                 &token.email_note,
+                &token.tag_name,
+                &token.tag_color,
                 &token.ban_status,
                 &token.portal_info,
+                &token.auth_session,
+                &token.suspensions,
+                &token.balance_color_mode,
+                &token.skip_check,
             ],
         ).await?;
 
@@ -135,7 +167,7 @@ impl TokenStorage for PostgreSQLStorage {
         let client = pool.get().await?;
 
         let rows = client.query(
-            "SELECT id, tenant_url, access_token, created_at, updated_at, portal_url, email_note, ban_status, portal_info FROM tokens WHERE id = $1",
+            "SELECT id, tenant_url, access_token, created_at, updated_at, portal_url, email_note, tag_name, tag_color, ban_status, portal_info, auth_session, suspensions, balance_color_mode, skip_check FROM tokens WHERE id = $1",
             &[&token_id],
         ).await?;
 
@@ -148,8 +180,14 @@ impl TokenStorage for PostgreSQLStorage {
                 updated_at: row.get(4),
                 portal_url: row.get(5),
                 email_note: row.get(6),
-                ban_status: row.get(7),
-                portal_info: row.get(8),
+                tag_name: row.get(7),
+                tag_color: row.get(8),
+                ban_status: row.get(9),
+                portal_info: row.get(10),
+                auth_session: row.get(11),
+                suspensions: row.get(12),
+                balance_color_mode: row.get(13),
+                skip_check: row.get(14),
             };
             Ok(Some(token))
         } else {
@@ -175,14 +213,22 @@ impl TokenStorage for PostgreSQLStorage {
 }
 
 impl PostgreSQLStorage {
-    /// 查找具有相同tenant_url和access_token但不同ID的token
-    pub async fn find_duplicate_tokens(&self, tenant_url: &str, access_token: &str, exclude_token_id: &str) -> Result<Vec<TokenData>, Box<dyn std::error::Error + Send + Sync>> {
+    /// 查找具有相同邮箱但不同ID的token
+    /// 如果邮箱为空，则不查找重复项
+    pub async fn find_duplicate_tokens(&self, email_note: Option<&str>, exclude_token_id: &str) -> Result<Vec<TokenData>, Box<dyn std::error::Error + Send + Sync>> {
+        // 如果邮箱为空，直接返回空列表
+        let email = match email_note {
+            Some(e) if !e.trim().is_empty() => e.trim(),
+            _ => return Ok(Vec::new()),
+        };
+
         let pool = self.get_pool().await?;
         let client = pool.get().await?;
 
+        // 使用 LOWER() 进行不区分大小写的比较
         let rows = client.query(
-            "SELECT id, tenant_url, access_token, created_at, updated_at, portal_url, email_note, ban_status, portal_info FROM tokens WHERE tenant_url = $1 AND access_token = $2 AND id != $3",
-            &[&tenant_url, &access_token, &exclude_token_id],
+            "SELECT id, tenant_url, access_token, created_at, updated_at, portal_url, email_note, tag_name, tag_color, ban_status, portal_info, auth_session, suspensions, balance_color_mode, skip_check FROM tokens WHERE LOWER(TRIM(email_note)) = LOWER($1) AND id != $2",
+            &[&email, &exclude_token_id],
         ).await?;
 
         let mut tokens = Vec::new();
@@ -195,8 +241,14 @@ impl PostgreSQLStorage {
                 updated_at: row.get(4),
                 portal_url: row.get(5),
                 email_note: row.get(6),
-                ban_status: row.get(7),
-                portal_info: row.get(8),
+                tag_name: row.get(7),
+                tag_color: row.get(8),
+                ban_status: row.get(9),
+                portal_info: row.get(10),
+                auth_session: row.get(11),
+                suspensions: row.get(12),
+                balance_color_mode: row.get(13),
+                skip_check: row.get(14),
             };
             tokens.push(token);
         }

@@ -2,28 +2,28 @@
   <div class="modal-overlay">
     <div class="modal-content outlook-manager" @click.stop>
       <div class="modal-header">
-        <h3>Outlook 邮箱管理</h3>
+        <h3>{{ $t('outlookManager.title') }}</h3>
         <button @click="$emit('close')" class="close-btn">×</button>
       </div>
 
       <div class="modal-body">
         <!-- 添加邮箱表单 -->
         <div class="add-account-section">
-          <h4>添加邮箱账户</h4>
+          <h4>{{ $t('outlookManager.addAccount') }}</h4>
           <div class="session-notice">
             <span class="notice-icon">ℹ️</span>
-            账户信息仅在当前会话中有效，关闭应用后需要重新添加
+            {{ $t('outlookManager.sessionNotice') }}
           </div>
           <div class="form-group">
-            <label>账户信息:</label>
+            <label>{{ $t('outlookManager.accountInfo') }}:</label>
             <input
               v-model="accountInput"
               type="text"
-              placeholder="邮箱地址----密码----Refresh Token----Client ID"
+              :placeholder="$t('outlookManager.placeholder')"
               class="form-input"
             >
             <div class="input-hint">
-              请按格式输入：邮箱地址----密码----Refresh Token----Client ID
+              {{ $t('outlookManager.inputHint') }}
             </div>
           </div>
           <div class="form-actions">
@@ -32,7 +32,7 @@
               :disabled="!canAddAccount || isAdding"
               :class="['btn', 'primary', { loading: isAdding }]"
             >
-              {{ isAdding ? '添加中...' : '添加账户' }}
+              {{ isAdding ? $t('outlookManager.status.checking') : $t('outlookManager.addAccountBtn') }}
             </button>
           </div>
         </div>
@@ -40,25 +40,25 @@
         <!-- 账户列表 -->
         <div class="accounts-section">
           <div class="section-header">
-            <h4>当前会话账户 ({{ accounts.length }})</h4>
+            <h4>{{ $t('outlookManager.accountList') }} ({{ accounts.length }})</h4>
             <button
               @click="refreshAccounts"
               :disabled="isLoading"
               class="btn secondary small"
             >
-              刷新
+              {{ $t('outlookManager.checkStatus') }}
             </button>
 
           </div>
 
           <div v-if="isLoading" class="loading-state">
             <div class="spinner"></div>
-            <p>加载账户中...</p>
+            <p>{{ $t('outlookManager.status.checking') }}</p>
           </div>
 
           <div v-else-if="accounts.length === 0" class="empty-state">
-            <p>当前会话中暂无邮箱账户</p>
-            <p class="empty-hint">添加账户后即可开始使用邮件功能</p>
+            <p>{{ $t('outlookManager.emptyState') }}</p>
+            <p class="empty-hint">{{ $t('outlookManager.emptyDescription') }}</p>
           </div>
 
           <div v-else class="accounts-list">
@@ -83,20 +83,20 @@
                   @click="viewEmails(account.email)"
                   class="btn primary small"
                 >
-                  查看邮件
+                  {{ $t('outlookManager.viewEmails') }}
                 </button>
                 <button
                   @click="checkStatus(account.email)"
                   :disabled="isCheckingStatus"
                   class="btn secondary small"
                 >
-                  检查状态
+                  {{ $t('outlookManager.checkStatus') }}
                 </button>
                 <button
                   @click="deleteAccount(account.email)"
                   class="btn danger small"
                 >
-                  移除
+                  {{ $t('outlookManager.deleteAccount') }}
                 </button>
               </div>
             </div>
@@ -117,9 +117,13 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { useI18n } from 'vue-i18n'
 import EmailViewer from './EmailViewer.vue'
 
-const emit = defineEmits(['close', 'show-status'])
+const emit = defineEmits(['close'])
+
+// i18n
+const { t } = useI18n()
 
 // 响应式数据
 const accounts = ref([])
@@ -141,7 +145,7 @@ const canAddAccount = computed(() => {
 
 // 方法
 const showStatus = (message, type = 'info') => {
-  emit('show-status', message, type)
+  window.$notify[type](message)
 }
 
 const refreshAccounts = async () => {
@@ -167,7 +171,7 @@ const addAccount = async () => {
     const [email, password, refreshToken, clientId] = parts.map(part => part.trim())
 
     if (!email || !password || !refreshToken || !clientId) {
-      throw new Error('邮箱、密码、Refresh Token 和 Client ID 都不能为空')
+      throw new Error(t('outlookManager.messages.invalidFormat'))
     }
 
     // 回退到IMAP版本（Graph API需要不同的权限）
@@ -182,9 +186,9 @@ const addAccount = async () => {
 
     // 刷新账户列表
     await refreshAccounts()
-    showStatus('账户添加成功', 'success')
+    showStatus(t('outlookManager.messages.addSuccess'), 'success')
   } catch (error) {
-    showStatus(`添加失败: ${error}`, 'error')
+    showStatus(`${t('outlookManager.messages.addSuccess')}: ${error}`, 'error')
   } finally {
     isAdding.value = false
   }
@@ -200,12 +204,12 @@ const deleteAccount = async (email) => {
     if (deleted) {
       await refreshAccounts()
       delete accountStatuses.value[email]
-      showStatus('账户已从当前会话中移除', 'success')
+      showStatus(t('outlookManager.messages.deleteSuccess'), 'success')
     } else {
-      showStatus('账户不存在', 'warning')
+      showStatus(t('outlookManager.messages.invalidFormat'), 'warning')
     }
   } catch (error) {
-    showStatus(`移除失败: ${error}`, 'error')
+    showStatus(`${t('outlookManager.messages.deleteSuccess')}: ${error}`, 'error')
   }
 }
 
@@ -217,7 +221,7 @@ const checkStatus = async (email) => {
     showStatus(`${email} 状态: ${status.status}`, 'info')
   } catch (error) {
     accountStatuses.value[email] = 'error'
-    showStatus(`状态检查失败: ${error}`, 'error')
+    showStatus(`${t('outlookManager.messages.statusCheckFailed')}: ${error}`, 'error')
   } finally {
     isCheckingStatus.value = false
   }
@@ -243,10 +247,10 @@ const getStatusClass = (email) => {
 const getStatusText = (email) => {
   const status = accountStatuses.value[email]
   switch (status) {
-    case 'active': return '活跃'
-    case 'inactive': return '非活跃'
-    case 'error': return '错误'
-    default: return '未知'
+    case 'active': return t('outlookManager.status.online')
+    case 'inactive': return t('outlookManager.status.offline')
+    case 'error': return t('outlookManager.status.error')
+    default: return t('outlookManager.status.checking')
   }
 }
 
@@ -279,15 +283,17 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  padding: 20px;
+  z-index: 2000;
 }
 
 .modal-content {
-  background: white;
+  background: var(--color-surface, #ffffff);
   border-radius: 12px;
-  max-width: 90vw;
-  max-height: 95vh;
-  overflow-y: auto;
+  width: 100%;
+  max-width: 900px;
+  height: 90vh;
+  overflow: hidden;
   position: relative;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
 }
@@ -297,14 +303,14 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 20px 24px;
-  border-bottom: 1px solid #e5e7eb;
-  background: #f9fafb;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  background: var(--color-surface-alt, #f9fafb);
   border-radius: 12px 12px 0 0;
 }
 
 .modal-header h3 {
   margin: 0;
-  color: #374151;
+  color: var(--color-text-primary, #374151);
   font-size: 18px;
   font-weight: 600;
 }
@@ -314,7 +320,7 @@ onMounted(() => {
   border: none;
   font-size: 24px;
   cursor: pointer;
-  color: #6b7280;
+  color: var(--color-text-muted, #6b7280);
   padding: 0;
   width: 32px;
   height: 32px;
@@ -326,14 +332,14 @@ onMounted(() => {
 }
 
 .close-btn:hover {
-  background: #e5e7eb;
-  color: #374151;
+  background: var(--color-border, #e5e7eb);
+  color: var(--color-text-primary, #374151);
 }
 
 .outlook-manager {
-  width: 90vw;
-  max-width: 800px;
-  max-height: 90vh;
+  width: 100%;
+  max-width: 900px;
+  height: 90vh;
 }
 
 .modal-body {
@@ -342,7 +348,7 @@ onMounted(() => {
 }
 
 .add-account-section {
-  background: #f8f9fa;
+  background: var(--color-surface-muted, #f8f9fa);
   border-radius: 8px;
   padding: 20px;
   margin-bottom: 24px;
@@ -350,7 +356,7 @@ onMounted(() => {
 
 .add-account-section h4 {
   margin: 0 0 16px 0;
-  color: #333;
+  color: var(--color-text-heading, #333);
   font-size: 16px;
   font-weight: 600;
 }
@@ -363,7 +369,7 @@ onMounted(() => {
   display: block;
   margin-bottom: 6px;
   font-weight: 500;
-  color: #374151;
+  color: var(--color-text-primary, #374151);
   font-size: 14px;
 }
 
@@ -371,17 +377,19 @@ onMounted(() => {
 .form-textarea {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-strong, #d1d5db);
   border-radius: 6px;
   font-size: 14px;
   transition: border-color 0.2s ease;
   box-sizing: border-box;
+  background: var(--color-surface, #ffffff);
+  color: var(--color-text-primary, #374151);
 }
 
 .form-input:focus,
 .form-textarea:focus {
   outline: none;
-  border-color: #3b82f6;
+  border-color: var(--color-accent, #3b82f6);
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
@@ -397,7 +405,7 @@ onMounted(() => {
 .input-hint {
   margin-top: 6px;
   font-size: 12px;
-  color: #6b7280;
+  color: var(--color-text-muted, #6b7280);
   font-style: italic;
 }
 
@@ -406,12 +414,12 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   padding: 12px;
-  background: #fef3c7;
-  border: 1px solid #f59e0b;
+  background: var(--color-warning-surface, #fef3c7);
+  border: 1px solid var(--color-warning-bg, #f59e0b);
   border-radius: 6px;
   margin-bottom: 16px;
   font-size: 13px;
-  color: #92400e;
+  color: var(--color-warning-text, #92400e);
 }
 
 .notice-icon {
@@ -421,13 +429,13 @@ onMounted(() => {
 
 .empty-hint {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--color-text-soft, #9ca3af);
   margin-top: 8px;
 }
 
 .accounts-section h4 {
   margin: 0;
-  color: #333;
+  color: var(--color-text-heading, #333);
   font-size: 16px;
   font-weight: 600;
 }
@@ -450,8 +458,8 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 16px;
-  background: white;
-  border: 1px solid #e5e7eb;
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border, #e5e7eb);
   border-radius: 8px;
 }
 
@@ -461,7 +469,7 @@ onMounted(() => {
 
 .account-email {
   font-weight: 500;
-  color: #374151;
+  color: var(--color-text-primary, #374151);
   margin-bottom: 6px;
 }
 
@@ -481,30 +489,30 @@ onMounted(() => {
 
 .account-created {
   font-size: 11px;
-  color: #6b7280;
-  background: #f3f4f6;
+  color: var(--color-text-muted, #6b7280);
+  background: var(--color-surface-hover, #f3f4f6);
   padding: 2px 6px;
   border-radius: 8px;
 }
 
 .status-active {
-  background: #d1fae5;
-  color: #065f46;
+  background: var(--color-success-surface, #d1fae5);
+  color: var(--color-success-text, #065f46);
 }
 
 .status-inactive {
-  background: #fee2e2;
-  color: #991b1b;
+  background: var(--color-danger-soft-surface, #fee2e2);
+  color: var(--color-danger-bg-hover, #991b1b);
 }
 
 .status-error {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--color-warning-surface, #fef3c7);
+  color: var(--color-warning-text, #92400e);
 }
 
 .status-unknown {
-  background: #f3f4f6;
-  color: #6b7280;
+  background: var(--color-surface-hover, #f3f4f6);
+  color: var(--color-text-muted, #6b7280);
 }
 
 .account-actions {
@@ -533,32 +541,32 @@ onMounted(() => {
 }
 
 .btn.primary {
-  background: #3b82f6;
-  color: white;
+  background: var(--color-accent, #3b82f6);
+  color: var(--color-text-inverse, #ffffff);
 }
 
 .btn.primary:hover:not(:disabled) {
-  background: #2563eb;
+  background: var(--color-accent-hover, #2563eb);
   transform: translateY(-1px);
   box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
 }
 
 .btn.secondary {
-  background: #6b7280;
-  color: white;
+  background: var(--color-text-muted, #6b7280);
+  color: var(--color-text-inverse, #ffffff);
 }
 
 .btn.secondary:hover:not(:disabled) {
-  background: #4b5563;
+  background: var(--color-text-secondary, #4b5563);
 }
 
 .btn.danger {
-  background: #dc2626;
-  color: white;
+  background: var(--color-danger-bg, #dc2626);
+  color: var(--color-text-inverse, #ffffff);
 }
 
 .btn.danger:hover:not(:disabled) {
-  background: #b91c1c;
+  background: var(--color-danger-bg-hover, #b91c1c);
 }
 
 .btn.small {
@@ -577,26 +585,26 @@ onMounted(() => {
 }
 
 .btn.danger {
-  background: #dc2626;
-  color: white;
+  background: var(--color-danger-bg, #dc2626);
+  color: var(--color-text-inverse, #ffffff);
 }
 
 .btn.danger:hover {
-  background: #b91c1c;
+  background: var(--color-danger-bg-hover, #b91c1c);
 }
 
 .loading-state,
 .empty-state {
   text-align: center;
   padding: 40px 20px;
-  color: #6b7280;
+  color: var(--color-text-muted, #6b7280);
 }
 
 .spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid #f3f3f3;
-  border-top: 3px solid #3b82f6;
+  border: 3px solid var(--color-surface-hover, #f3f3f3);
+  border-top: 3px solid var(--color-accent, #3b82f6);
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin: 0 auto 16px;
@@ -605,5 +613,32 @@ onMounted(() => {
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .modal-content {
+    margin: 10px;
+    max-width: calc(100vw - 20px);
+    height: calc(100vh - 20px);
+  }
+}
+
+@media (max-width: 480px) {
+  .modal-content {
+    max-height: 95vh;
+  }
+}
+
+/* Dark theme styles */
+[data-theme='dark'] .session-notice {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+}
+
+[data-theme='dark'] .status-icon.warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
 }
 </style>

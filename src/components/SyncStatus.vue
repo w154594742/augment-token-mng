@@ -7,7 +7,7 @@
   >
     <div class="status-header">
       <div class="header-content">
-        <h3>存储状态</h3>
+        <h3>{{ $t('storage.status') }}</h3>
       </div>
     </div>
 
@@ -28,9 +28,12 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 // Emits
-const emit = defineEmits(['show-status', 'storage-status-changed'])
+const emit = defineEmits(['storage-status-changed'])
 
 // Reactive data
 const storageStatus = ref(null)
@@ -40,17 +43,17 @@ const isSyncing = ref(false)
 
 // Computed properties
 const simpleStorageText = computed(() => {
-  if (!storageStatus.value) return '加载中...'
+  if (!storageStatus.value) return t('loading.loading')
 
   switch (storageStatus.value.storage_type) {
     case 'dual_storage':
-      return '双重存储'
+      return t('storage.dual')
     case 'local_only':
-      return '本地存储'
+      return t('storage.local')
     case 'postgresql':
-      return '数据库存储'
+      return t('storage.database')
     default:
-      return '未知'
+      return t('storage.unknown')
   }
 })
 
@@ -70,20 +73,20 @@ const storageTypeClass = computed(() => {
 })
 
 const syncHintText = computed(() => {
-  if (!storageStatus.value) return '加载中...'
+  if (!storageStatus.value) return t('loading.loading')
 
   if (storageStatus.value.is_database_available) {
-    return '点击同步数据'
+    return t('storage.syncData')
   } else {
-    return '点击检测数据库'
+    return t('storage.detectDatabase')
   }
 })
 
 const syncTooltip = computed(() => {
   if (!storageStatus.value?.is_database_available) {
-    return '点击检测数据库连接'
+    return t('storage.clickToDetect')
   }
-  return '点击执行双向同步'
+  return t('storage.clickToSync')
 })
 
 const canSync = computed(() => {
@@ -113,7 +116,7 @@ const refreshStatus = async () => {
     }
   } catch (error) {
     console.error('Failed to get storage status:', error)
-    emit('show-status', `获取存储状态失败: ${error}`, 'error')
+    window.$notify.error(`${t('messages.getStorageStatusFailed')}: ${error}`)
   } finally {
     isRefreshing.value = false
   }
@@ -132,9 +135,9 @@ const handleSync = async () => {
     try {
       const result = await invoke('bidirectional_sync_tokens')
       lastSyncStatus.value = result
-      emit('show-status', '双向同步完成', 'success')
+      window.$notify.success(t('messages.bidirectionalSyncComplete'))
     } catch (error) {
-      emit('show-status', `同步失败: ${error}`, 'error')
+      window.$notify.error(`${t('messages.syncFailed')}: ${error}`)
     } finally {
       isSyncing.value = false
     }
@@ -142,9 +145,9 @@ const handleSync = async () => {
     // 本地存储模式：刷新存储状态
     await refreshStatus()
     if (storageStatus.value?.is_database_available) {
-      emit('show-status', '数据库连接检测成功，已切换到双重存储模式', 'success')
+      window.$notify.success(t('messages.databaseDetected'))
     } else {
-      emit('show-status', '未检测到数据库连接，仍为本地存储模式', 'info')
+      window.$notify.info(t('messages.databaseNotDetected'))
     }
   }
 }
@@ -157,10 +160,10 @@ onMounted(() => {
 
 <style scoped>
 .sync-status-component {
-  background: white;
+  background: var(--color-surface, #ffffff);
   border-radius: 6px;
   padding: 10px 5px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--color-border, #e5e7eb);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   display: flex;
   flex-direction: column;
@@ -174,7 +177,7 @@ onMounted(() => {
 
 .sync-status-component:hover:not(:disabled) {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-  border-color: #d1d5db;
+  border-color: var(--color-border-strong, #d1d5db);
 }
 
 .sync-status-component:disabled {
@@ -199,7 +202,7 @@ onMounted(() => {
   margin: 0;
   font-size: 13px;
   font-weight: 600;
-  color: #374151;
+  color: var(--color-text-primary, #374151);
 }
 
 
@@ -236,24 +239,24 @@ onMounted(() => {
 
 .sync-hint {
   font-size: 10px;
-  color: #6b7280;
+  color: var(--color-text-muted, #6b7280);
   text-align: center;
   font-weight: 500;
 }
 
 .storage-badge.dual {
-  background: #d1fae5;
-  color: #065f46;
+  background: var(--color-success-surface, #d1fae5);
+  color: var(--color-success-text, #065f46);
 }
 
 .storage-badge.local {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--color-warning-surface, #fef3c7);
+  color: var(--color-warning-text, #92400e);
 }
 
 .storage-badge.database {
-  background: #dbeafe;
-  color: #1e40af;
+  background: var(--color-info-surface, #dbeafe);
+  color: var(--color-blue-primary-hover, #1e40af);
 }
 
 

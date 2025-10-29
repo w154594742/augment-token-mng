@@ -2,7 +2,7 @@
   <div class="modal-overlay">
     <div class="modal-content email-viewer" @click.stop>
       <div class="modal-header">
-        <h3>邮件管理 - {{ email }}</h3>
+        <h3>{{ $t('emailViewer.title') }} - {{ email }}</h3>
         <button @click="$emit('close')" class="close-btn">×</button>
       </div>
 
@@ -10,30 +10,30 @@
         <!-- 文件夹选择和控制 -->
         <div class="controls-section">
           <div class="folder-selector">
-            <label>文件夹:</label>
+            <label>{{ $t('emailViewer.folder') }}:</label>
             <select v-model="selectedFolder" @change="loadEmails" class="folder-select">
-              <option value="inbox">收件箱</option>
-              <option value="junk">垃圾邮件</option>
+              <option value="inbox">{{ $t('emailViewer.inbox') }}</option>
+              <option value="junk">{{ $t('emailViewer.junk') }}</option>
             </select>
           </div>
-          
+
           <div class="page-controls">
             <button
               @click="previousPage"
               :disabled="currentPage <= 1 || isLoading"
               class="btn secondary small"
             >
-              上一页
+              {{ $t('emailViewer.previousPage') }}
             </button>
             <span class="page-info">
-              第 {{ currentPage }} 页 / 共 {{ totalPages }} 页
+              {{ $t('emailViewer.pageInfo', { current: currentPage, total: totalPages }) }}
             </span>
             <button
               @click="nextPage"
               :disabled="currentPage >= totalPages || isLoading"
               class="btn secondary small"
             >
-              下一页
+              {{ $t('emailViewer.nextPage') }}
             </button>
           </div>
 
@@ -42,7 +42,7 @@
             :disabled="isLoading"
             class="btn primary small"
           >
-            {{ isLoading ? '加载中...' : '重新加载' }}
+            {{ isLoading ? $t('emailViewer.loading') : $t('emailViewer.reload') }}
           </button>
 
         </div>
@@ -51,12 +51,12 @@
         <div class="emails-section">
           <div v-if="isLoading" class="loading-state">
             <div class="spinner"></div>
-            <p>加载邮件中...</p>
+            <p>{{ $t('emailViewer.loading') }}</p>
           </div>
 
           <div v-else-if="emails.length === 0" class="empty-state">
-            <p>该文件夹中暂无邮件</p>
-            <p class="empty-hint">请检查网络连接或稍后重试</p>
+            <p>{{ $t('emailViewer.noEmails') }}</p>
+            <p class="empty-hint">{{ $t('emailViewer.noEmails') }}</p>
           </div>
 
           <div v-else class="emails-list">
@@ -83,7 +83,7 @@
                   @click.stop="viewEmailDetails(emailItem)"
                   class="btn primary small"
                 >
-                  查看详情
+                  {{ $t('emailViewer.viewDetails') }}
                 </button>
               </div>
               <div class="email-status">
@@ -96,9 +96,7 @@
           <!-- 分页信息 -->
           <div v-if="emails.length > 0" class="pagination-info">
             <p>
-              显示 {{ (currentPage - 1) * pageSize + 1 }} - 
-              {{ Math.min(currentPage * pageSize, totalEmails) }} 
-              / 共 {{ totalEmails }} 封邮件
+              {{ $t('emailViewer.totalEmails', { count: totalEmails }) }}
             </p>
           </div>
         </div>
@@ -112,13 +110,13 @@
     :email="email"
     :message-id="selectedEmailForDetails"
     @close="showEmailDetails = false"
-    @show-status="showStatus"
   />
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { useI18n } from 'vue-i18n'
 import EmailDetails from './EmailDetails.vue'
 
 const props = defineProps({
@@ -128,7 +126,10 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['close', 'show-status'])
+const emit = defineEmits(['close'])
+
+// i18n
+const { t } = useI18n()
 
 // 响应式数据
 const emails = ref([])
@@ -148,7 +149,7 @@ const totalPages = computed(() => {
 
 // 方法
 const showStatus = (message, type = 'info') => {
-  emit('show-status', message, type)
+  window.$notify[type](message)
 }
 
 const loadEmails = async () => {
@@ -242,11 +243,11 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 2000;
 }
 
 .modal-content {
-  background: white;
+  background: var(--color-surface, #ffffff);
   border-radius: 12px;
   max-width: 90vw;
   max-height: 95vh;
@@ -260,14 +261,14 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 20px 24px;
-  border-bottom: 1px solid #e5e7eb;
-  background: #f9fafb;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  background: var(--color-surface-alt, #f9fafb);
   border-radius: 12px 12px 0 0;
 }
 
 .modal-header h3 {
   margin: 0;
-  color: #374151;
+  color: var(--color-text-primary, #374151);
   font-size: 18px;
   font-weight: 600;
 }
@@ -277,7 +278,7 @@ onMounted(() => {
   border: none;
   font-size: 24px;
   cursor: pointer;
-  color: #6b7280;
+  color: var(--color-text-muted, #6b7280);
   padding: 0;
   width: 32px;
   height: 32px;
@@ -289,8 +290,8 @@ onMounted(() => {
 }
 
 .close-btn:hover {
-  background: #e5e7eb;
-  color: #374151;
+  background: var(--color-border, #e5e7eb);
+  color: var(--color-text-primary, #374151);
 }
 
 .email-viewer {
@@ -310,7 +311,7 @@ onMounted(() => {
   align-items: center;
   margin-bottom: 20px;
   padding: 16px;
-  background: #f8f9fa;
+  background: var(--color-surface-muted, #f8f9fa);
   border-radius: 8px;
   flex-wrap: wrap;
   gap: 12px;
@@ -324,12 +325,12 @@ onMounted(() => {
 
 .folder-selector label {
   font-weight: 500;
-  color: #374151;
+  color: var(--color-text-primary, #374151);
 }
 
 .folder-select {
   padding: 6px 12px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-strong, #d1d5db);
   border-radius: 4px;
   font-size: 14px;
 }
@@ -342,7 +343,7 @@ onMounted(() => {
 
 .page-info {
   font-size: 14px;
-  color: #6b7280;
+  color: var(--color-text-muted, #6b7280);
   white-space: nowrap;
 }
 
@@ -360,21 +361,21 @@ onMounted(() => {
   display: flex;
   align-items: center;
   padding: 16px;
-  background: white;
-  border: 1px solid #e5e7eb;
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border, #e5e7eb);
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .email-item:hover {
-  background: #f9fafb;
-  border-color: #d1d5db;
+  background: var(--color-surface-alt, #f9fafb);
+  border-color: var(--color-border-strong, #d1d5db);
 }
 
 .email-item.selected {
-  background: #eff6ff;
-  border-color: #3b82f6;
+  background: var(--color-accent-muted, #eff6ff);
+  border-color: var(--color-accent, #3b82f6);
 }
 
 .email-sender {
@@ -388,8 +389,8 @@ onMounted(() => {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: #3b82f6;
-  color: white;
+  background: var(--color-accent, #3b82f6);
+  color: var(--color-text-inverse, #ffffff);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -404,7 +405,7 @@ onMounted(() => {
 
 .sender-name {
   font-weight: 500;
-  color: #374151;
+  color: var(--color-text-primary, #374151);
   font-size: 14px;
   white-space: nowrap;
   overflow: hidden;
@@ -413,7 +414,7 @@ onMounted(() => {
 
 .email-date {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--color-text-muted, #6b7280);
 }
 
 .email-content {
@@ -428,7 +429,7 @@ onMounted(() => {
 
 .email-subject {
   font-weight: 500;
-  color: #111827;
+  color: var(--color-text-strong, #111827);
   margin-bottom: 4px;
   white-space: nowrap;
   overflow: hidden;
@@ -437,8 +438,8 @@ onMounted(() => {
 
 .email-folder {
   font-size: 12px;
-  color: #6b7280;
-  background: #f3f4f6;
+  color: var(--color-text-muted, #6b7280);
+  background: var(--color-surface-hover, #f3f4f6);
   padding: 2px 8px;
   border-radius: 12px;
   display: inline-block;
@@ -451,7 +452,7 @@ onMounted(() => {
 }
 
 .unread-indicator {
-  color: #3b82f6;
+  color: var(--color-accent, #3b82f6);
   font-size: 12px;
 }
 
@@ -463,13 +464,13 @@ onMounted(() => {
   text-align: center;
   margin-top: 20px;
   padding: 16px;
-  background: #f8f9fa;
+  background: var(--color-surface-muted, #f8f9fa);
   border-radius: 8px;
 }
 
 .pagination-info p {
   margin: 0;
-  color: #6b7280;
+  color: var(--color-text-muted, #6b7280);
   font-size: 14px;
 }
 
@@ -494,21 +495,21 @@ onMounted(() => {
 }
 
 .btn.primary {
-  background: #3b82f6;
-  color: white;
+  background: var(--color-accent, #3b82f6);
+  color: var(--color-text-inverse, #ffffff);
 }
 
 .btn.primary:hover:not(:disabled) {
-  background: #2563eb;
+  background: var(--color-accent-hover, #2563eb);
 }
 
 .btn.secondary {
-  background: #6b7280;
-  color: white;
+  background: var(--color-text-muted, #6b7280);
+  color: var(--color-text-inverse, #ffffff);
 }
 
 .btn.secondary:hover:not(:disabled) {
-  background: #4b5563;
+  background: var(--color-text-secondary, #4b5563);
 }
 
 .btn.small {
@@ -520,20 +521,20 @@ onMounted(() => {
 .empty-state {
   text-align: center;
   padding: 60px 20px;
-  color: #6b7280;
+  color: var(--color-text-muted, #6b7280);
 }
 
 .empty-hint {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--color-text-soft, #9ca3af);
   margin-top: 8px;
 }
 
 .spinner {
   width: 40px;
   height: 40px;
-  border: 4px solid #f3f3f3;
-  border-top: 4px solid #3b82f6;
+  border: 4px solid var(--color-surface-hover, #f3f3f3);
+  border-top: 4px solid var(--color-accent, #3b82f6);
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin: 0 auto 20px;

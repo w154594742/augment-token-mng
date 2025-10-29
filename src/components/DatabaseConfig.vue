@@ -3,76 +3,76 @@
     <div class="modal-overlay">
       <div class="modal-content" @click.stop>
         <div class="modal-header">
-          <h2>数据库配置</h2>
+          <h2>{{ $t('databaseConfig.title') }}</h2>
           <button class="close-btn" @click="$emit('close')">×</button>
         </div>
         
         <div class="modal-body">
           <div class="config-form">
             <div class="form-group">
-              <label for="host">主机地址:</label>
+              <label for="host">{{ $t('databaseConfig.host') }}:</label>
               <input
                 id="host"
                 v-model="config.host"
                 type="text"
-                placeholder="localhost"
+                :placeholder="$t('databaseConfig.placeholders.host')"
                 :disabled="isLoading"
               >
             </div>
 
             <div class="form-group">
-              <label for="port">端口:</label>
+              <label for="port">{{ $t('databaseConfig.port') }}:</label>
               <input
                 id="port"
                 v-model.number="config.port"
                 type="number"
-                placeholder="5432"
+                :placeholder="$t('databaseConfig.placeholders.port')"
                 :disabled="isLoading"
               >
             </div>
 
             <div class="form-group">
-              <label for="database">数据库名:</label>
+              <label for="database">{{ $t('databaseConfig.database') }}:</label>
               <input
                 id="database"
                 v-model="config.database"
                 type="text"
-                placeholder="augment_tokens"
+                :placeholder="$t('databaseConfig.placeholders.database')"
                 :disabled="isLoading"
               >
             </div>
 
             <div class="form-group">
-              <label for="username">用户名:</label>
+              <label for="username">{{ $t('databaseConfig.username') }}:</label>
               <input
                 id="username"
                 v-model="config.username"
                 type="text"
-                placeholder="postgres"
+                :placeholder="$t('databaseConfig.placeholders.username')"
                 :disabled="isLoading"
               >
             </div>
 
             <div class="form-group">
-              <label for="password">密码:</label>
+              <label for="password">{{ $t('databaseConfig.password') }}:</label>
               <input
                 id="password"
                 v-model="config.password"
                 type="password"
-                placeholder="请输入数据库密码"
+                :placeholder="$t('databaseConfig.placeholders.password')"
                 :disabled="isLoading"
               >
             </div>
 
             <div class="form-group">
-              <label for="sslMode">SSL模式:</label>
+              <label for="sslMode">{{ $t('databaseConfig.sslMode') }}:</label>
               <select
                 id="sslMode"
                 v-model="config.sslMode"
                 :disabled="isLoading"
               >
-                <option value="require">Require (强制SSL)</option>
-                <option value="disable">Disable (禁用SSL)</option>
+                <option value="require">{{ $t('databaseConfig.sslModes.require') }}</option>
+                <option value="disable">{{ $t('databaseConfig.sslModes.disable') }}</option>
               </select>
             </div>
 
@@ -88,9 +88,9 @@
             <svg v-if="!isTesting" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
             </svg>
-            测试连接
+            {{ $t('databaseConfig.testConnection') }}
           </button>
-          
+
           <button
             @click="saveConfig"
             :class="['btn', 'primary', { loading: isSaving }]"
@@ -99,7 +99,7 @@
             <svg v-if="!isSaving" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
               <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
             </svg>
-            保存配置
+            {{ $t('databaseConfig.saveConfig') }}
           </button>
 
           <button
@@ -111,7 +111,27 @@
             <svg v-if="!isDeleting" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
               <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
             </svg>
-            删除配置
+            {{ $t('databaseConfig.deleteConfig') }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 删除确认对话框 -->
+    <div v-if="showConfirmDelete" class="confirm-dialog-overlay">
+      <div class="confirm-dialog">
+        <div class="confirm-dialog-header">
+          <h3>{{ $t('databaseConfig.deleteConfig') }}</h3>
+        </div>
+        <div class="confirm-dialog-body">
+          <p>{{ $t('databaseConfig.messages.confirmDelete') }}</p>
+        </div>
+        <div class="confirm-dialog-footer">
+          <button @click="cancelDelete" class="btn secondary">
+            {{ $t('databaseConfig.cancel') }}
+          </button>
+          <button @click="confirmDeleteConfig" class="btn danger" :disabled="isDeleting">
+            {{ isDeleting ? $t('loading.deleting') : $t('databaseConfig.deleteConfig') }}
           </button>
         </div>
       </div>
@@ -122,6 +142,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { useI18n } from 'vue-i18n'
 
 // Props
 const props = defineProps({
@@ -132,7 +153,10 @@ const props = defineProps({
 })
 
 // Emits
-const emit = defineEmits(['close', 'config-saved', 'config-deleted', 'show-status'])
+const emit = defineEmits(['close', 'config-saved', 'config-deleted'])
+
+// i18n
+const { t } = useI18n()
 
 // Reactive data
 const config = ref({
@@ -151,6 +175,7 @@ const isSaving = ref(false)
 const isDeleting = ref(false)
 const hasExistingConfig = ref(false)
 const isConnectionTested = ref(false)
+const showConfirmDelete = ref(false)
 
 // Computed properties
 const canTest = computed(() => {
@@ -204,11 +229,11 @@ const testConnection = async () => {
     })
 
     // 连接成功时发送toast通知
-    emit('show-status', '数据库连接测试成功！', 'success')
+    window.$notify.success(t('databaseConfig.messages.testSuccess'))
     isConnectionTested.value = true
   } catch (error) {
     // 连接失败时发送toast通知
-    emit('show-status', `数据库连接测试失败: ${error}`, 'error')
+    window.$notify.error(`${t('databaseConfig.messages.testFailed')}: ${error}`)
     isConnectionTested.value = false
   } finally {
     isTesting.value = false
@@ -228,34 +253,39 @@ const saveConfig = async () => {
       ssl_mode: config.value.sslMode
     })
     
-    emit('show-status', '数据库配置保存成功！', 'success')
+    window.$notify.success(t('databaseConfig.messages.saveSuccess'))
     emit('config-saved')
     emit('close')
   } catch (error) {
-    emit('show-status', `保存配置失败: ${error}`, 'error')
+    window.$notify.error(`${t('databaseConfig.messages.saveFailed')}: ${error}`)
   } finally {
     isSaving.value = false
   }
 }
 
-const deleteConfig = async () => {
-  if (!confirm('确定要删除数据库配置吗？这将禁用数据库存储功能。')) {
-    return
-  }
-  
+const deleteConfig = () => {
+  showConfirmDelete.value = true
+}
+
+const confirmDeleteConfig = async () => {
+  showConfirmDelete.value = false
   isDeleting.value = true
   
   try {
     await invoke('delete_database_config')
     
-    emit('show-status', '数据库配置已删除', 'success')
+    window.$notify.success(t('databaseConfig.messages.deleteSuccess'))
     emit('config-deleted')
     emit('close')
   } catch (error) {
-    emit('show-status', `删除配置失败: ${error}`, 'error')
+    window.$notify.error(`${t('databaseConfig.messages.deleteFailed')}: ${error}`)
   } finally {
     isDeleting.value = false
   }
+}
+
+const cancelDelete = () => {
+  showConfirmDelete.value = false
 }
 
 // Watch for config changes to reset connection test status
@@ -286,10 +316,10 @@ onMounted(() => {
 }
 
 .modal-content {
-  background: white;
+  background: var(--color-surface, #ffffff);
   border-radius: 12px;
   width: 90%;
-  max-width: 500px;
+  max-width: 600px;
   max-height: 90vh;
   overflow: hidden;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
@@ -302,15 +332,15 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 20px 24px;
-  border-bottom: 1px solid #e5e7eb;
-  background: #f9fafb;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  background: var(--color-surface-alt, #f9fafb);
   border-radius: 12px 12px 0 0;
   flex-shrink: 0;
 }
 
 .modal-header h2 {
   margin: 0;
-  color: #374151;
+  color: var(--color-text-primary, #374151);
   font-size: 18px;
   font-weight: 600;
 }
@@ -320,7 +350,7 @@ onMounted(() => {
   border: none;
   font-size: 24px;
   cursor: pointer;
-  color: #6b7280;
+  color: var(--color-text-muted, #6b7280);
   padding: 0;
   width: 32px;
   height: 32px;
@@ -332,8 +362,8 @@ onMounted(() => {
 }
 
 .close-btn:hover {
-  background: #e5e7eb;
-  color: #374151;
+  background: var(--color-border, #e5e7eb);
+  color: var(--color-text-primary, #374151);
 }
 
 .modal-body {
@@ -357,48 +387,50 @@ onMounted(() => {
 
 .form-group label {
   font-weight: 500;
-  color: #374151;
+  color: var(--color-text-primary, #374151);
   font-size: 14px;
 }
 
 .form-group input {
   padding: 10px 12px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-strong, #d1d5db);
   border-radius: 6px;
   font-size: 14px;
   transition: border-color 0.2s ease;
+  background: var(--color-surface, #ffffff);
+  color: var(--color-text-primary, #374151);
 }
 
 .form-group input:focus {
   outline: none;
-  border-color: #3b82f6;
+  border-color: var(--color-accent, #3b82f6);
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
 .form-group input:disabled {
-  background-color: #f9fafb;
-  color: #6b7280;
+  background-color: var(--color-surface-alt, #f9fafb);
+  color: var(--color-text-muted, #6b7280);
   cursor: not-allowed;
 }
 
 .form-group select {
   padding: 10px 12px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-strong, #d1d5db);
   border-radius: 6px;
   font-size: 14px;
   transition: border-color 0.2s ease;
-  background-color: white;
+  background-color: var(--color-surface, #ffffff);
 }
 
 .form-group select:focus {
   outline: none;
-  border-color: #3b82f6;
+  border-color: var(--color-accent, #3b82f6);
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
 .form-group select:disabled {
-  background-color: #f9fafb;
-  color: #6b7280;
+  background-color: var(--color-surface-alt, #f9fafb);
+  color: var(--color-text-muted, #6b7280);
   cursor: not-allowed;
 }
 
@@ -407,16 +439,16 @@ onMounted(() => {
 .modal-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 16px;
   padding: 20px 24px;
-  border-top: 1px solid #e5e7eb;
-  background: #f9fafb;
+  border-top: 1px solid var(--color-border, #e5e7eb);
+  background: var(--color-surface-alt, #f9fafb);
   border-radius: 0 0 12px 12px;
   flex-shrink: 0;
 }
 
 .btn {
-  padding: 10px 16px;
+  padding: 10px 20px;
   border: none;
   border-radius: 6px;
   cursor: pointer;
@@ -429,30 +461,30 @@ onMounted(() => {
 }
 
 .btn.primary {
-  background: #3b82f6;
-  color: white;
+  background: var(--color-accent, #3b82f6);
+  color: var(--color-text-inverse, #ffffff);
 }
 
 .btn.primary:hover:not(:disabled) {
-  background: #2563eb;
+  background: var(--color-accent-hover, #2563eb);
 }
 
 .btn.secondary {
-  background: #6b7280;
-  color: white;
+  background: var(--color-text-muted, #6b7280);
+  color: var(--color-text-inverse, #ffffff);
 }
 
 .btn.secondary:hover:not(:disabled) {
-  background: #4b5563;
+  background: var(--color-text-secondary, #4b5563);
 }
 
 .btn.danger {
-  background: #dc2626;
-  color: white;
+  background: var(--color-danger-bg, #dc2626);
+  color: var(--color-text-inverse, #ffffff);
 }
 
 .btn.danger:hover:not(:disabled) {
-  background: #b91c1c;
+  background: var(--color-danger-bg-hover, #b91c1c);
 }
 
 .btn:disabled {
@@ -465,19 +497,72 @@ onMounted(() => {
   pointer-events: none;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   .modal-content {
     width: 95%;
     margin: 20px;
   }
-  
+
   .modal-footer {
     flex-direction: column;
+    gap: 12px;
   }
-  
+
   .btn {
     width: 100%;
     justify-content: center;
   }
+}
+
+/* 确认对话框样式 */
+.confirm-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2100;
+}
+
+.confirm-dialog {
+  background: var(--color-surface, #ffffff);
+  border-radius: 12px;
+  width: 90%;
+  max-width: 400px;
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+.confirm-dialog-header {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+}
+
+.confirm-dialog-header h3 {
+  margin: 0;
+  color: var(--color-text-primary, #374151);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.confirm-dialog-body {
+  padding: 16px 24px 20px;
+}
+
+.confirm-dialog-body p {
+  margin: 0;
+  color: var(--color-text-secondary, #6b7280);
+  line-height: 1.5;
+}
+
+.confirm-dialog-footer {
+  padding: 16px 24px 20px;
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
 }
 </style>

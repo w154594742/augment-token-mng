@@ -1,14 +1,22 @@
 <template>
-  <div class="token-card">
+  <div :class="['token-card', { 'menu-open': showCopyMenu || showCheckMenu, 'highlighted': isHighlighted }]" @click="handleClickOutside">
     <!-- 状态指示器 -->
-    <div v-if="(token.portal_url && portalInfo.data) || token.ban_status" class="status-indicator">
-      <!-- 账号状态优先显示 -->
-      <span v-if="token.ban_status" :class="['status-badge', getStatusClass(token.ban_status)]">
-        {{ getStatusText(token.ban_status) }}
+    <div v-if="showStatusIndicator" class="status-indicator">
+      <span
+        v-if="hasTag"
+        class="status-badge tag-badge"
+        :style="tagBadgeStyle"
+        :title="tagDisplayName"
+      >
+        {{ tagDisplayName }}
       </span>
-      <!-- Portal状态作为备选 -->
-      <span v-else-if="token.portal_url && portalInfo.data" :class="['status-badge', portalInfo.data.is_active ? 'active' : 'inactive']">
-        {{ portalInfo.data.is_active ? '正常' : '失效' }}
+      <span
+        v-if="hasStatusBadge"
+        :class="['status-badge', getStatusClass(token.ban_status), { clickable: isBannedWithSuspensions }]"
+        @click="handleStatusClick"
+        :title="isBannedWithSuspensions ? $t('tokenCard.clickToViewDetails') : ''"
+      >
+        {{ getStatusText(token.ban_status) }}
       </span>
     </div>
 
@@ -16,22 +24,24 @@
       <div class="token-info">
         <h3 class="tenant-name">{{ displayUrl }}</h3>
         <div class="token-meta">
-          <!-- 第一行：创建日期和邮箱备注 -->
+          <!-- 第一行：创建日期 -->
           <div class="meta-row">
             <span class="created-date">{{ formatDate(token.created_at) }}</span>
-            <div v-if="token.email_note" class="email-note-container">
+          </div>
+          <!-- 第二行：邮箱备注（如果有） -->
+          <div v-if="token.email_note" class="meta-row email-row">
+            <div class="email-note-container">
               <span
                 class="email-note"
-                @mouseenter="handleEmailMouseEnter"
-                @mouseleave="handleEmailMouseLeave"
-                :title="isEmailHovered ? '' : token.email_note"
+                @mouseenter="isEmailHovered = true"
+                @mouseleave="isEmailHovered = false"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" class="email-icon">
                   <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.89 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
                 </svg>
                 {{ isEmailHovered ? token.email_note : maskedEmail }}
               </span>
-              <button @click="copyEmailNote" class="copy-email-btn" title="复制邮箱备注">
+              <button @click="copyEmailNote" class="copy-email-btn" :title="$t('tokenCard.copyEmailNote')">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
                 </svg>
@@ -41,62 +51,126 @@
           <!-- 第二行：Portal信息 -->
           <template v-if="token.portal_url">
             <div class="meta-row portal-row">
-              <!-- 优先显示Portal数据，无论是来自本地缓存还是网络请求 -->
               <template v-if="portalInfo.data">
-                <span v-if="portalInfo.data.expiry_date" class="portal-meta expiry">过期: {{ formatExpiryDate(portalInfo.data.expiry_date) }}</span>
-                <span :class="['portal-meta', 'balance', { 'exhausted': portalInfo.data.credits_balance === 0 && !hasUnlimitedUsage }]">
-                  <template v-if="portalInfo.data.credits_balance === 0">
-                    <template v-if="hasUnlimitedUsage">
-                      还能使用
-                    </template>
-                    <template v-else>
-                      使用次数耗尽
-                    </template>
-                  </template>
-                  <template v-else>
-                    剩余: {{ portalInfo.data.credits_balance }}
-                  </template>
-                </span>
+                <span v-if="portalInfo.data.expiry_date" class="portal-meta expiry">{{ $t('tokenCard.expiry') }}: {{ formatExpiryDate(portalInfo.data.expiry_date) }}</span>
               </template>
-              <!-- 如果没有数据且正在加载，显示加载状态 -->
-              <span v-else-if="isLoadingPortalInfo" class="portal-meta loading">加载中...</span>
-              <!-- 不显示错误信息，静默处理所有错误 -->
+              <!-- 余额显示：无论是否有数据都显示 -->
+              <span
+                :class="balanceClasses"
+                @click="toggleBalanceColor"
+                :style="{ cursor: isBalanceClickable ? 'pointer' : 'default' }"
+              >
+                {{ balanceDisplay }}
+              </span>
+              <template v-if="portalInfo.data">
+                <!-- Credit 统计按钮 -->
+                <button
+                  v-if="token.auth_session"
+                  @click="showCreditUsageModal = true"
+                  class="credit-stats-btn"
+                  :title="$t('credit.viewUsage')"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/>
+                  </svg>
+                </button>
+              </template>
             </div>
           </template>
         </div>
       </div>
 
       <div class="actions">
-        <button @click="openEditorModal" class="btn-action vscode" title="选择编辑器">
-          <img :src="editorIcons.vscode" alt="选择编辑器" width="18" height="18" />
+        <button @click="openEditorModal" class="btn-action vscode" :title="$t('tokenCard.selectEditor')">
+          <img :src="editorIcons.vscode" :alt="$t('tokenCard.selectEditor')" width="18" height="18" />
         </button>
-        <button @click="copyToken" class="btn-action" title="复制Token">
+        <button @click="exportTokenAsJson" class="btn-action export" :title="$t('tokenCard.exportJson')">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+            <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/>
           </svg>
         </button>
-        <button @click="copyTenantUrl" class="btn-action" title="复制租户URL">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/>
-          </svg>
-        </button>
-        <button @click="checkAccountStatus" :class="['btn-action', 'status-check', { loading: isCheckingStatus }]" :disabled="isCheckingStatus" title="检测账号状态">
-          <svg v-if="!isCheckingStatus" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
-          </svg>
-          <div v-else class="loading-spinner"></div>
-        </button>
-        <button v-if="token.portal_url" @click="$emit('open-portal', token)" class="btn-action portal" title="打开Portal">
+        <div class="copy-menu-wrapper" @click.stop>
+          <button @click.stop="toggleCopyMenu" class="btn-action copy" :title="$t('tokenCard.copyMenu')">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+            </svg>
+          </button>
+          <Transition name="dropdown">
+            <div v-if="showCopyMenu" class="copy-dropdown" @click.stop>
+              <button @click="handleCopyMenuClick('token')" class="copy-menu-item">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                </svg>
+                <span>{{ $t('tokenCard.copyToken') }}</span>
+              </button>
+              <button @click="handleCopyMenuClick('url')" class="copy-menu-item">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/>
+                </svg>
+                <span>{{ $t('tokenCard.copyTenantUrl') }}</span>
+              </button>
+              <button v-if="token.portal_url" @click="handleCopyMenuClick('portal')" class="copy-menu-item">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.11 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/>
+                </svg>
+                <span>{{ $t('tokenCard.copyPortalUrl') }}</span>
+              </button>
+              <button v-if="token.auth_session" @click="handleCopyMenuClick('session')" class="copy-menu-item">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/>
+                </svg>
+                <span>{{ $t('tokenCard.copyAuthSession') }}</span>
+              </button>
+            </div>
+          </Transition>
+        </div>
+        <div class="check-menu-wrapper">
+          <button
+            @click="checkAccountStatus"
+            @contextmenu.prevent="showCheckMenu = !showCheckMenu"
+            :class="['btn-action', 'status-check', {
+              loading: isCheckingStatus || (isBatchChecking && !token.skip_check),
+              disabled: token.skip_check
+            }]"
+            :disabled="isCheckingStatus || (isBatchChecking && !token.skip_check)"
+            :title="token.skip_check ? $t('tokenCard.checkDisabled') : $t('tokenCard.checkAccountStatus')"
+          >
+            <svg v-if="!isCheckingStatus && !(isBatchChecking && !token.skip_check) && !token.skip_check" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+            </svg>
+            <!-- 禁用检测时显示暂停图标 -->
+            <svg v-else-if="!isCheckingStatus && !(isBatchChecking && !token.skip_check) && token.skip_check" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+            </svg>
+            <div v-else-if="isCheckingStatus || (isBatchChecking && !token.skip_check)" class="loading-spinner"></div>
+          </button>
+          <Transition name="dropdown">
+            <div v-if="showCheckMenu" class="check-dropdown" @click.stop>
+              <button @click="toggleSkipCheck" class="check-menu-item">
+                <!-- 禁用检测图标 - 暂停 -->
+                <svg v-if="!token.skip_check" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                </svg>
+                <!-- 启用检测图标 - 播放 -->
+                <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M8 5v14l11-7z"/>
+                </svg>
+                <span>{{ token.skip_check ? $t('tokenCard.enableCheck') : $t('tokenCard.disableCheck') }}</span>
+              </button>
+            </div>
+          </Transition>
+        </div>
+        <button v-if="token.portal_url" @click="showPortalDialog = true" class="btn-action portal" :title="$t('tokenCard.openPortal')">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.11 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/>
           </svg>
         </button>
-        <button @click="$emit('edit', token)" class="btn-action edit" title="编辑Token">
+        <button @click="$emit('edit', token)" class="btn-action edit" :title="$t('tokenCard.editToken')">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
           </svg>
         </button>
-        <button @click="deleteToken" class="btn-action delete" title="删除Token">
+        <button @click="deleteToken" class="btn-action delete" :title="$t('tokenCard.deleteToken')">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
           </svg>
@@ -105,13 +179,12 @@
     </div>
   </div>
 
-  <!-- 编辑器选择模态框 - 移到组件外部，使用 Teleport -->
   <Teleport to="body">
     <Transition name="modal" appear>
       <div v-if="showEditorModal" class="editor-modal-overlay">
         <div class="editor-modal" @click.stop>
           <div class="modal-header">
-            <h3>选择编辑器</h3>
+            <h3>{{ $t('tokenCard.selectEditor') }}</h3>
             <button @click.stop="showEditorModal = false" class="modal-close">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
@@ -295,35 +368,129 @@
       </div>
     </Transition>
   </Teleport>
+
+  <ExternalLinkDialog
+    :show="showPortalDialog"
+    :title="$t('dialogs.selectOpenMethod')"
+    :url="token.portal_url || ''"
+    :browser-title="getPortalBrowserTitle()"
+    @close="showPortalDialog = false"
+  />
+
+  <!-- Suspensions 详情模态框 -->
+  <Teleport to="body">
+    <Transition name="modal" appear>
+      <div v-if="showSuspensionsModal" class="suspensions-modal-overlay" @click="showSuspensionsModal = false">
+        <div class="suspensions-modal" @click.stop>
+          <div class="modal-header">
+            <h3>{{ $t('tokenCard.suspensionDetails') }}</h3>
+            <button @click="showSuspensionsModal = false" class="modal-close">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+              </svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div v-if="formattedSuspensions.length > 0" class="suspensions-list">
+              <div v-for="(suspension, index) in formattedSuspensions" :key="index" class="suspension-item">
+                <div class="suspension-field">
+                  <strong>{{ $t('tokenCard.suspensionType') }}:</strong>
+                  <span class="suspension-value">{{ suspension.type }}</span>
+                </div>
+                <div v-if="suspension.reason" class="suspension-field">
+                  <strong>{{ $t('tokenCard.reason') }}:</strong>
+                  <span class="suspension-value">{{ suspension.reason }}</span>
+                </div>
+                <div v-if="suspension.date" class="suspension-field">
+                  <strong>{{ $t('tokenCard.date') }}:</strong>
+                  <span class="suspension-value">{{ suspension.date }}</span>
+                </div>
+              </div>
+            </div>
+            <div v-else class="no-suspensions">
+              <p>{{ $t('tokenCard.noSuspensionData') }}</p>
+            </div>
+            <!-- 原始 JSON 数据 -->
+            <details class="raw-json" open>
+              <summary>{{ $t('tokenCard.rawData') }}</summary>
+              <pre>{{ JSON.stringify(token.suspensions, null, 2) }}</pre>
+            </details>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- Trae 版本选择对话框 -->
+  <Teleport to="body">
+    <Transition name="modal" appear>
+      <div v-if="showTraeVersionDialog" class="trae-version-modal-overlay" @click="showTraeVersionDialog = false">
+        <div class="trae-version-modal" @click.stop>
+          <div class="modal-header">
+            <h3>选择 Trae 版本</h3>
+            <button @click="showTraeVersionDialog = false" class="modal-close">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+              </svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div class="version-options">
+              <button @click="handleTraeVersionSelect('global')" class="version-option">
+                <div class="version-icon">🌍</div>
+                <div class="version-name">Trae 国际版</div>
+              </button>
+              <button @click="handleTraeVersionSelect('cn')" class="version-option">
+                <div class="version-icon">🇨🇳</div>
+                <div class="version-name">Trae 国内版</div>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Credit Usage Modal -->
+    <Transition name="modal" appear>
+      <CreditUsageModal
+        v-if="showCreditUsageModal && token.auth_session"
+        :auth-session="token.auth_session"
+        :credits-balance="remainingCredits"
+        @close="showCreditUsageModal = false"
+        @refresh-balance="handleCreditUsageRefresh"
+      />
+    </Transition>
+  </Teleport>
 </template>
 
 <script setup>
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { useI18n } from 'vue-i18n'
+import ExternalLinkDialog from './ExternalLinkDialog.vue'
+import CreditUsageModal from './CreditUsageModal.vue'
 
-// 防抖函数
-function debounce(func, wait) {
-  let timeout
-  return function executedFunction(...args) {
-    const later = () => {
-      clearTimeout(timeout)
-      func(...args)
-    }
-    clearTimeout(timeout)
-    timeout = setTimeout(later, wait)
-  }
-}
+const { t } = useI18n()
+
 
 // Props
 const props = defineProps({
   token: {
     type: Object,
     required: true
+  },
+  isBatchChecking: {
+    type: Boolean,
+    default: false
+  },
+  isHighlighted: {
+    type: Boolean,
+    default: false
   }
 })
 
 // Emits
-const emit = defineEmits(['delete', 'copy-success', 'open-portal', 'edit', 'token-updated'])
+const emit = defineEmits(['delete', 'edit', 'token-updated'])
 
 // Reactive data
 const isLoadingPortalInfo = ref(false)
@@ -332,7 +499,55 @@ const isCheckingStatus = ref(false)
 const isEmailHovered = ref(false)
 const showEditorModal = ref(false)
 const isModalClosing = ref(false)
-const hasUnlimitedUsage = ref(false)
+const showPortalDialog = ref(false)
+const showCheckMenu = ref(false)
+const showSuspensionsModal = ref(false)
+const showTraeVersionDialog = ref(false)
+const showCopyMenu = ref(false)
+const showCreditUsageModal = ref(false)
+
+const DEFAULT_TAG_COLOR = '#f97316'
+
+const tagDisplayName = computed(() => (props.token.tag_name ?? '').trim())
+const hasTag = computed(() => tagDisplayName.value.length > 0)
+
+const normalizeHexColor = (color) => {
+  if (typeof color !== 'string') {
+    return DEFAULT_TAG_COLOR
+  }
+  const value = color.trim()
+  return /^#[0-9a-fA-F]{6}$/.test(value) ? value.toLowerCase() : DEFAULT_TAG_COLOR
+}
+
+const getContrastingTextColor = (hex) => {
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) {
+    return '#ffffff'
+  }
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+  return luminance > 0.6 ? '#1f2937' : '#ffffff'
+}
+
+const tagBadgeStyle = computed(() => {
+  if (!hasTag.value) {
+    return {}
+  }
+  const color = normalizeHexColor(props.token.tag_color || DEFAULT_TAG_COLOR)
+  return {
+    backgroundColor: color,
+    borderColor: color,
+    color: getContrastingTextColor(color)
+  }
+})
+
+const hasStatusBadge = computed(() => {
+  const hasPortalStatus = props.token.portal_url && portalInfo.value.data
+  return Boolean(hasPortalStatus || props.token.ban_status)
+})
+
+const showStatusIndicator = computed(() => hasTag.value || hasStatusBadge.value)
 
 // 图标映射
 const editorIcons = {
@@ -358,6 +573,35 @@ const editorIcons = {
   androidstudio: '/icons/androidstudio.svg'
 }
 
+// 判断是否为封禁状态且有 suspensions 数据
+const isBannedWithSuspensions = computed(() => {
+  return (
+    props.token.ban_status === 'SUSPENDED' &&
+    props.token.suspensions &&
+    (Array.isArray(props.token.suspensions) ? props.token.suspensions.length > 0 : true)
+  )
+})
+
+// 格式化 suspensions 数据
+const formattedSuspensions = computed(() => {
+  if (!props.token.suspensions) return []
+
+  if (Array.isArray(props.token.suspensions)) {
+    return props.token.suspensions.map(s => ({
+      type: s.suspensionType || 'Unknown',
+      reason: s.reason || '',
+      date: s.date || s.createdAt || ''
+    }))
+  }
+
+  // 如果不是数组,尝试作为单个对象处理
+  return [{
+    type: props.token.suspensions.suspensionType || 'Unknown',
+    reason: props.token.suspensions.reason || '',
+    date: props.token.suspensions.date || props.token.suspensions.createdAt || ''
+  }]
+})
+
 // Computed properties
 const displayUrl = computed(() => {
   try {
@@ -368,11 +612,6 @@ const displayUrl = computed(() => {
   }
 })
 
-const maskedToken = computed(() => {
-  const token = props.token.access_token
-  if (token.length <= 20) return token
-  return token.substring(0, 10) + '...' + token.substring(token.length - 10)
-})
 
 const maskedEmail = computed(() => {
   const email = props.token.email_note
@@ -401,11 +640,79 @@ const maskedEmail = computed(() => {
   return maskedUsername + '@' + domain
 })
 
+// Portal余额显示相关计算属性
+const balanceClasses = computed(() => {
+  // 网络错误或账号异常状态显示红色
+  const hasError = portalInfo.value?.error
+  const exhausted = (
+    props.token.ban_status === 'EXPIRED' ||
+    props.token.ban_status === 'SUSPENDED'
+  )
+
+  // 如果是异常状态或网络错误（红色），不应用颜色模式
+  if (hasError || exhausted) {
+    return ['portal-meta', 'balance', 'exhausted']
+  }
+
+  // 没有数据时返回默认样式
+  if (!portalInfo.value || !portalInfo.value.data) {
+    return ['portal-meta', 'balance']
+  }
+
+  // 正常状态下应用颜色模式
+  const colorMode = props.token.balance_color_mode || 'green'
+  return ['portal-meta', 'balance', `color-${colorMode}`]
+})
+
+// 判断余额是否可点击（非异常状态才可点击）
+const isBalanceClickable = computed(() => {
+  // 网络错误或没有数据时不可点击
+  if (!portalInfo.value || !portalInfo.value.data || portalInfo.value.error) {
+    return false
+  }
+  const exhausted = (
+    props.token.ban_status === 'EXPIRED' ||
+    props.token.ban_status === 'SUSPENDED'
+  )
+  return !exhausted
+})
+
+const balanceDisplay = computed(() => {
+  if (!portalInfo.value) return ''
+
+  // 显示错误信息
+  if (portalInfo.value.error) {
+    return t('tokenCard.networkError')
+  }
+
+  if (!portalInfo.value.data) return ''
+
+  const status = props.token.ban_status
+  if (status === 'EXPIRED') return t('tokenCard.expired')
+  if (status === 'SUSPENDED') return t('tokenCard.banned')
+  const credits = portalInfo.value.data.credits_balance
+  return `${t('tokenCard.balance')}: ${credits}`
+})
+
+const remainingCredits = computed(() => {
+  const currentCredits = portalInfo.value?.data?.credits_balance
+  if (currentCredits !== undefined && currentCredits !== null) {
+    return currentCredits
+  }
+  const fallbackCredits = props.token.portal_info?.credits_balance
+  if (fallbackCredits !== undefined && fallbackCredits !== null) {
+    return fallbackCredits
+  }
+  return null
+})
+
 // 获取状态样式类
 const getStatusClass = (status) => {
   switch (status) {
     case 'SUSPENDED':
       return 'banned'
+    case 'EXPIRED':
+      return 'inactive'
     case 'INVALID_TOKEN':
       return 'invalid'
     case 'ACTIVE':
@@ -419,18 +726,17 @@ const getStatusClass = (status) => {
 const getStatusText = (status) => {
   switch (status) {
     case 'SUSPENDED':
-      return '已封禁'
+      return t('tokenCard.banned')
+    case 'EXPIRED':
+      return t('tokenCard.expired')
     case 'INVALID_TOKEN':
-      return 'Token失效'
+      return t('tokenCard.tokenInvalid')
     case 'ACTIVE':
-      return '正常'
+      return t('tokenCard.active')
     default:
-      return '正常'
+      return t('tokenCard.active')
   }
 }
-
-
-
 
 
 // Methods
@@ -471,40 +777,143 @@ const copyToClipboard = async (text) => {
   }
 }
 
-// 复制Token
-const copyToken = async () => {
-  const success = await copyToClipboard(props.token.access_token)
+// 通用复制方法
+const copyWithNotification = async (text, successMessage, errorMessage) => {
+  const success = await copyToClipboard(text)
   if (success) {
-    emit('copy-success', 'Token已复制到剪贴板!', 'success')
+    window.$notify.success(t(successMessage))
   } else {
-    emit('copy-success', '复制Token失败', 'error')
+    window.$notify.error(t(errorMessage))
   }
 }
+
+// 复制Token
+const copyToken = () => copyWithNotification(
+  props.token.access_token,
+  'messages.tokenCopied',
+  'messages.copyTokenFailed'
+)
 
 // 复制租户URL
-const copyTenantUrl = async () => {
-  const success = await copyToClipboard(props.token.tenant_url)
-  if (success) {
-    emit('copy-success', '租户URL已复制到剪贴板!', 'success')
-  } else {
-    emit('copy-success', '复制租户URL失败', 'error')
+const copyTenantUrl = () => copyWithNotification(
+  props.token.tenant_url,
+  'messages.tenantUrlCopied',
+  'messages.copyTenantUrlFailed'
+)
+
+// 复制邮箱备注
+const copyEmailNote = () => copyWithNotification(
+  props.token.email_note,
+  'messages.emailNoteCopied',
+  'messages.copyEmailNoteFailed'
+)
+
+// 复制Portal URL
+const copyPortalUrl = () => {
+  copyWithNotification(
+    props.token.portal_url,
+    'messages.portalUrlCopied',
+    'messages.copyPortalUrlFailed'
+  )
+}
+
+// 复制Auth Session
+const copyAuthSession = () => {
+  if (!props.token.auth_session) {
+    window.$notify.warning(t('messages.noAuthSession'))
+    return
+  }
+  copyWithNotification(
+    props.token.auth_session,
+    'messages.authSessionCopied',
+    'messages.copyAuthSessionFailed'
+  )
+}
+
+// 导出Token为JSON
+const exportTokenAsJson = () => {
+  const exportData = {
+    access_token: props.token.access_token,
+    tenant_url: props.token.tenant_url
+  }
+
+  if (props.token.portal_url) {
+    exportData.portal_url = props.token.portal_url
+  }
+
+  if (props.token.email_note) {
+    exportData.email_note = props.token.email_note
+  }
+
+  if (props.token.tag_name) {
+    exportData.tag_name = props.token.tag_name
+    if (props.token.tag_color) {
+      exportData.tag_color = props.token.tag_color
+    }
+  }
+
+  if (props.token.auth_session) {
+    exportData.auth_session = props.token.auth_session
+  }
+
+  const jsonString = JSON.stringify(exportData, null, 2)
+  copyWithNotification(
+    jsonString,
+    'messages.tokenJsonExported',
+    'messages.exportTokenJsonFailed'
+  )
+}
+
+// 切换复制菜单
+const toggleCopyMenu = () => {
+  showCopyMenu.value = !showCopyMenu.value
+}
+
+// 处理复制菜单项点击
+const handleCopyMenuClick = (type) => {
+  showCopyMenu.value = false
+  switch (type) {
+    case 'token':
+      copyToken()
+      break
+    case 'url':
+      copyTenantUrl()
+      break
+    case 'portal':
+      copyPortalUrl()
+      break
+    case 'session':
+      copyAuthSession()
+      break
   }
 }
 
-// 复制邮箱备注
-const copyEmailNote = async () => {
-  const success = await copyToClipboard(props.token.email_note)
-  if (success) {
-    emit('copy-success', '邮箱备注已复制到剪贴板!', 'success')
-  } else {
-    emit('copy-success', '复制邮箱备注失败', 'error')
+// 处理状态标签点击
+const handleStatusClick = () => {
+  if (isBannedWithSuspensions.value) {
+    showSuspensionsModal.value = true
   }
 }
 
 // 键盘事件处理
 const handleKeydown = (event) => {
-  if (event.key === 'Escape' && showEditorModal.value) {
-    showEditorModal.value = false
+  if (event.key === 'Escape') {
+    if (showEditorModal.value) {
+      showEditorModal.value = false
+    }
+    if (showCopyMenu.value) {
+      showCopyMenu.value = false
+    }
+  }
+}
+
+// 点击外部关闭复制菜单和检测菜单
+const handleClickOutside = () => {
+  if (showCopyMenu.value) {
+    showCopyMenu.value = false
+  }
+  if (showCheckMenu.value) {
+    showCheckMenu.value = false
   }
 }
 
@@ -514,134 +923,65 @@ const openEditorModal = () => {
   showEditorModal.value = true
 }
 
-// 关闭模态框
-const closeModal = (event) => {
-  if (isModalClosing.value) return
 
-  // 如果事件来自模态框内部，不关闭
-  if (event && event.target.closest('.editor-modal')) {
-    return
-  }
-
-  showEditorModal.value = false
-  isModalClosing.value = false
+const editorNames = {
+  'cursor': 'Cursor',
+  'vscode': 'VS Code',
+  'kiro': 'Kiro',
+  'trae': 'Trae',
+  'windsurf': 'Windsurf',
+  'qoder': 'Qoder',
+  'vscodium': 'VSCodium',
+  'codebuddy': 'CodeBuddy',
+  'idea': 'IntelliJ IDEA',
+  'pycharm': 'PyCharm',
+  'goland': 'GoLand',
+  'rustrover': 'RustRover',
+  'webstorm': 'WebStorm',
+  'phpstorm': 'PhpStorm',
+  'androidstudio': 'Android Studio',
+  'clion': 'CLion',
+  'datagrip': 'DataGrip',
+  'rider': 'Rider',
+  'rubymine': 'RubyMine',
+  'aqua': 'Aqua'
 }
 
-// 生成 Cursor 协议 URL
-const getCursorProtocolUrl = () => {
+const vscodeSchemes = {
+  'cursor': 'cursor',
+  'vscode': 'vscode',
+  'kiro': 'kiro',
+  'trae': 'trae',
+  'trae-cn': 'trae-cn',
+  'windsurf': 'windsurf',
+  'qoder': 'qoder',
+  'vscodium': 'vscodium',
+  'codebuddy': 'codebuddy'
+}
+
+const createVSCodeProtocolUrl = (scheme, label) => {
   try {
     const token = encodeURIComponent(props.token.access_token)
     const url = encodeURIComponent(props.token.tenant_url)
     const portalUrl = encodeURIComponent(props.token.portal_url || "")
-    return `cursor://Augment.vscode-augment/autoAuth?token=${token}&url=${url}&portal=${portalUrl}`
+    return `${scheme}://Augment.vscode-augment/autoAuth?token=${token}&url=${url}&portal=${portalUrl}`
   } catch (error) {
-    console.error('Failed to generate Cursor protocol URL:', error)
     return '#'
   }
 }
 
-// 生成 VS Code 协议 URL
-const getVSCodeProtocolUrl = () => {
-  try {
-    const token = encodeURIComponent(props.token.access_token)
-    const url = encodeURIComponent(props.token.tenant_url)
-    const portalUrl = encodeURIComponent(props.token.portal_url || "")
-    return `vscode://Augment.vscode-augment/autoAuth?token=${token}&url=${url}&portal=${portalUrl}`
-  } catch (error) {
-    console.error('Failed to generate VS Code protocol URL:', error)
-    return '#'
-  }
-}
 
-// 生成 Kiro 协议 URL
-const getKiroProtocolUrl = () => {
-  try {
-    const token = encodeURIComponent(props.token.access_token)
-    const url = encodeURIComponent(props.token.tenant_url)
-    const portalUrl = encodeURIComponent(props.token.portal_url || "")
-    return `kiro://Augment.vscode-augment/autoAuth?token=${token}&url=${url}&portal=${portalUrl}`
-  } catch (error) {
-    console.error('Failed to generate Kiro protocol URL:', error)
-    return '#'
-  }
-}
+const jetbrainsEditors = new Set([
+  'idea', 'pycharm', 'goland', 'rustrover', 'webstorm',
+  'phpstorm', 'androidstudio', 'clion', 'datagrip', 'rider', 'rubymine', 'aqua'
+])
 
-// 生成 Trae 协议 URL
-const getTraeProtocolUrl = () => {
-  try {
-    const token = encodeURIComponent(props.token.access_token)
-    const url = encodeURIComponent(props.token.tenant_url)
-    const portalUrl = encodeURIComponent(props.token.portal_url || "")
-    return `trae://Augment.vscode-augment/autoAuth?token=${token}&url=${url}&portal=${portalUrl}`
-  } catch (error) {
-    console.error('Failed to generate Trae protocol URL:', error)
-    return '#'
-  }
-}
-
-// 生成 Windsurf 协议 URL
-const getWindsurfProtocolUrl = () => {
-  try {
-    const token = encodeURIComponent(props.token.access_token)
-    const url = encodeURIComponent(props.token.tenant_url)
-    const portalUrl = encodeURIComponent(props.token.portal_url || "")
-    return `windsurf://Augment.vscode-augment/autoAuth?token=${token}&url=${url}&portal=${portalUrl}`
-  } catch (error) {
-    console.error('Failed to generate Windsurf protocol URL:', error)
-    return '#'
-  }
-}
-
-// 生成 Qoder 协议 URL
-const getQoderProtocolUrl = () => {
-  try {
-    const token = encodeURIComponent(props.token.access_token)
-    const url = encodeURIComponent(props.token.tenant_url)
-    const portalUrl = encodeURIComponent(props.token.portal_url || "")
-    return `qoder://Augment.vscode-augment/autoAuth?token=${token}&url=${url}&portal=${portalUrl}`
-  } catch (error) {
-    console.error('Failed to generate Qoder protocol URL:', error)
-    return '#'
-  }
-}
-
-// 生成 VSCodium 协议 URL
-const getVSCodiumProtocolUrl = () => {
-  try {
-    const token = encodeURIComponent(props.token.access_token)
-    const url = encodeURIComponent(props.token.tenant_url)
-    const portalUrl = encodeURIComponent(props.token.portal_url || "")
-    return `vscodium://Augment.vscode-augment/autoAuth?token=${token}&url=${url}&portal=${portalUrl}`
-  } catch (error) {
-    console.error('Failed to generate VSCodium protocol URL:', error)
-    return '#'
-  }
-}
-
-// 生成 CodeBuddy 协议 URL
-const getCodeBuddyProtocolUrl = () => {
-  try {
-    const token = encodeURIComponent(props.token.access_token)
-    const url = encodeURIComponent(props.token.tenant_url)
-    const portalUrl = encodeURIComponent(props.token.portal_url || "")
-    return `codebuddy://Augment.vscode-augment/autoAuth?token=${token}&url=${url}&portal=${portalUrl}`
-  } catch (error) {
-    console.error('Failed to generate CodeBuddy protocol URL:', error)
-    return '#'
-  }
-}
-
-// 生成 JetBrains 编辑器协议 URL
-const getJetBrainsProtocolUrl = (editorType) => {
-  try {
-    const token = encodeURIComponent(props.token.access_token)
-    const url = encodeURIComponent(props.token.tenant_url)
-    return `jetbrains://${editorType}/plugin/Augment.jetbrains-augment/autoAuth?token=${token}&url=${url}`
-  } catch (error) {
-    console.error(`Failed to generate ${editorType} protocol URL:`, error)
-    return '#'
-  }
-}
+const vscodeProtocolResolvers = Object.fromEntries(
+  Object.entries(vscodeSchemes).map(([type, scheme]) => [
+    type,
+    () => createVSCodeProtocolUrl(scheme, editorNames[type] || type)
+  ])
+)
 
 // 为 JetBrains 编辑器创建 JSON 文件
 const createJetBrainsTokenFile = async (editorType) => {
@@ -662,258 +1002,81 @@ const createJetBrainsTokenFile = async (editorType) => {
 
     return { success: true, filePath: result }
   } catch (error) {
-    console.error(`Failed to create ${editorType} token file:`, error)
     return { success: false, error: error.toString() }
   }
 }
 
 // 处理编辑器链接点击事件
 const handleEditorClick = async (editorType) => {
-  try {
-    // 关闭模态框
-    showEditorModal.value = false
-    isModalClosing.value = false
-
-    // 定义 JetBrains 系编辑器列表
-    const jetbrainsEditors = [
-      'idea', 'pycharm', 'goland', 'rustrover', 'webstorm',
-      'phpstorm', 'androidstudio', 'clion', 'datagrip', 'rider', 'rubymine', 'aqua'
-    ]
-
-    // 获取编辑器名称
-    const getEditorName = (type) => {
-      const editorNames = {
-        'cursor': 'Cursor',
-        'vscode': 'VS Code',
-        'kiro': 'Kiro',
-        'trae': 'Trae',
-        'windsurf': 'Windsurf',
-        'qoder': 'Qoder',
-        'vscodium': 'VSCodium',
-        'codebuddy': 'CodeBuddy',
-        'idea': 'IntelliJ IDEA',
-        'pycharm': 'PyCharm',
-        'goland': 'GoLand',
-        'rustrover': 'RustRover',
-        'webstorm': 'WebStorm',
-        'phpstorm': 'PhpStorm',
-        'androidstudio': 'Android Studio',
-        'clion': 'CLion',
-        'datagrip': 'DataGrip',
-        'rider': 'Rider',
-        'rubymine': 'RubyMine',
-        'aqua': 'Aqua'
-      }
-      return editorNames[type] || type
-    }
-
-    const editorName = getEditorName(editorType)
-
-    // 检查是否为 JetBrains 系编辑器
-    if (jetbrainsEditors.includes(editorType)) {
-      // 为 JetBrains 编辑器创建 JSON 文件
-      const result = await createJetBrainsTokenFile(editorType)
-
-      if (result.success) {
-        emit('copy-success', `${editorName} Token 文件已创建`, 'success')
-      } else {
-        emit('copy-success', `创建 ${editorName} Token 文件失败: ${result.error}`, 'error')
-      }
-    } else {
-      // VSCode 系编辑器使用原有的协议 URL 方式
-      let protocolUrl
-
-      switch (editorType) {
-        case 'cursor':
-          protocolUrl = getCursorProtocolUrl()
-          break
-        case 'vscode':
-          protocolUrl = getVSCodeProtocolUrl()
-          break
-        case 'kiro':
-          protocolUrl = getKiroProtocolUrl()
-          break
-        case 'trae':
-          protocolUrl = getTraeProtocolUrl()
-          break
-        case 'windsurf':
-          protocolUrl = getWindsurfProtocolUrl()
-          break
-        case 'qoder':
-          protocolUrl = getQoderProtocolUrl()
-          break
-        case 'vscodium':
-          protocolUrl = getVSCodiumProtocolUrl()
-          break
-        case 'codebuddy':
-          protocolUrl = getCodeBuddyProtocolUrl()
-          break
-        default:
-          throw new Error(`Unknown VSCode editor type: ${editorType}`)
-      }
-
-      // 使用 Tauri 命令打开编辑器
-      await invoke('open_editor_with_protocol', { protocolUrl })
-      emit('copy-success', `正在打开 ${editorName}...`, 'success')
-    }
-  } catch (error) {
-    console.error('Failed to handle editor click:', error)
-    emit('copy-success', '操作失败', 'error')
-    showEditorModal.value = false
-    isModalClosing.value = false
-  }
-}
-
-// 邮箱悬浮事件处理
-const handleEmailMouseEnter = () => {
-  isEmailHovered.value = true
-}
-
-const handleEmailMouseLeave = () => {
-  isEmailHovered.value = false
-}
-
-
-
-const extractTokenFromPortalUrl = (portalUrl) => {
-  try {
-    const url = new URL(portalUrl)
-    return url.searchParams.get('token')
-  } catch {
-    return null
-  }
-}
-
-const loadPortalInfo = async (forceRefresh = false) => {
-  console.log('loadPortalInfo called with forceRefresh:', forceRefresh)
-  console.log('token.portal_url:', props.token.portal_url)
-  console.log('token.portal_info:', props.token.portal_info)
-
-  if (!props.token.portal_url) {
-    console.log('No portal_url, returning')
+  // 如果是 Trae，显示版本选择对话框
+  if (editorType === 'trae') {
+    showTraeVersionDialog.value = true
     return
   }
 
-  const token = extractTokenFromPortalUrl(props.token.portal_url)
-  console.log('Extracted token:', token ? 'found' : 'not found')
-  if (!token) return
-
-  // 优先显示本地存储的Portal信息
-  if (!forceRefresh && props.token.portal_info) {
-    console.log('Using cached portal info')
-    portalInfo.value = {
-      data: {
-        credits_balance: props.token.portal_info.credits_balance,
-        expiry_date: props.token.portal_info.expiry_date,
-        is_active: props.token.portal_info.is_active
-      },
-      error: null
-    }
-  } else if (!props.token.portal_info) {
-    // 如果没有本地数据，先清空错误状态
-    console.log('No cached data, clearing error state')
-    portalInfo.value = { data: null, error: null }
-  }
-
-  // 在后台获取最新信息
-  console.log('Starting background fetch')
-  isLoadingPortalInfo.value = true
-
   try {
-    // 首先获取customer信息
-    console.log('Calling get_customer_info...')
-    const customerResponse = await invoke('get_customer_info', { token })
-    console.log('Customer response received:', customerResponse)
-    const customerData = JSON.parse(customerResponse)
-    console.log('Customer data parsed:', customerData)
+    const editorName = editorNames[editorType] || editorType
 
-    if (customerData.customer && customerData.customer.ledger_pricing_units && customerData.customer.ledger_pricing_units.length > 0) {
-      const customerId = customerData.customer.id
-      const pricingUnitId = customerData.customer.ledger_pricing_units[0].id
-      console.log('Customer ID:', customerId, 'Pricing Unit ID:', pricingUnitId)
+    if (jetbrainsEditors.has(editorType)) {
+      const result = await createJetBrainsTokenFile(editorType)
 
-      // 获取ledger summary
-      console.log('Calling get_ledger_summary...')
-      const ledgerResponse = await invoke('get_ledger_summary', {
-        customerId,
-        pricingUnitId,
-        token
-      })
-      console.log('Ledger response received:', ledgerResponse)
-      const ledgerData = JSON.parse(ledgerResponse)
-      console.log('Ledger data parsed:', ledgerData)
-
-      // 处理credits_balance数据，无论credit_blocks是否为空
-      if (ledgerData.credits_balance !== undefined) {
-        console.log('Credits balance found:', ledgerData.credits_balance)
-
-        // 构建Portal数据对象
-        const newPortalData = {
-          credits_balance: parseInt(ledgerData.credits_balance) || 0
-        }
-
-        // 如果有credit_blocks数据，添加过期时间和状态信息
-        if (ledgerData.credit_blocks && ledgerData.credit_blocks.length > 0) {
-          console.log('Credit blocks found:', ledgerData.credit_blocks.length)
-          newPortalData.expiry_date = ledgerData.credit_blocks[0].expiry_date
-          newPortalData.is_active = ledgerData.credit_blocks[0].is_active
-        } else {
-          console.log('No credit blocks, but credits_balance available')
-          // 当没有credit_blocks时，设置默认值
-          newPortalData.expiry_date = null
-          newPortalData.is_active = false
-        }
-
-        console.log('New portal data:', newPortalData)
-
-        // 更新UI显示
-        portalInfo.value = {
-          data: newPortalData,
-          error: null
-        }
-        console.log('UI updated with portal data')
-
-
-        // 更新本地token对象
-        props.token.portal_info = {
-          credits_balance: newPortalData.credits_balance,
-          expiry_date: newPortalData.expiry_date,
-          is_active: newPortalData.is_active
-        }
-        // 更新时间戳以确保双向同步时选择正确版本
-        props.token.updated_at = new Date().toISOString()
-        console.log('Updated token portal_info:', props.token.portal_info)
-
-        // 如果剩余次数为0，检查是否有无限制使用权限
-        if (newPortalData.credits_balance === 0) {
-          await checkSubscriptionInfo()
-        }
+      if (result.success) {
+        emit('copy-success', t('messages.editorTokenFileCreated', { editor: editorName }), 'success')
       } else {
-        // 如果没有credits_balance数据且没有本地数据，静默处理
-        if (!props.token.portal_info) {
-          portalInfo.value = { data: null, error: null }
-        }
+        emit('copy-success', t('messages.createEditorTokenFileFailed', { editor: editorName, error: result.error }), 'error')
       }
     } else {
-      // 如果没有本地数据，静默处理，不显示错误信息
-      if (!props.token.portal_info) {
-        portalInfo.value = { data: null, error: null }
+      const resolver = vscodeProtocolResolvers[editorType]
+
+      if (!resolver) {
+        throw new Error(`Unknown VSCode editor type: ${editorType}`)
       }
+
+      const protocolUrl = resolver()
+
+      await invoke('open_editor_with_protocol', { protocolUrl })
+      window.$notify.success(t('messages.openingEditor', { editor: editorName }))
     }
   } catch (error) {
-    console.error('Failed to load portal info:', error)
-    // 无论是否有本地数据，都不显示错误信息，静默处理
-    if (!props.token.portal_info) {
-      portalInfo.value = { data: null, error: null }
-    }
-    // 如果是强制刷新，则抛出错误以便上层处理
-    if (forceRefresh) {
-      throw error
-    }
+    window.$notify.error(t('messages.operationFailed'))
   } finally {
-    isLoadingPortalInfo.value = false
+    showEditorModal.value = false
+    isModalClosing.value = false
   }
 }
+
+// 处理 Trae 版本选择
+const handleTraeVersionSelect = async (version) => {
+  showTraeVersionDialog.value = false
+
+  try {
+    const editorType = version === 'global' ? 'trae' : 'trae-cn'
+    const resolver = vscodeProtocolResolvers[editorType]
+
+    if (!resolver) {
+      throw new Error(`Unknown Trae version: ${version}`)
+    }
+
+    const protocolUrl = resolver()
+    await invoke('open_editor_with_protocol', { protocolUrl })
+    window.$notify.success(t('messages.openingEditor', { editor: 'Trae' }))
+  } catch (error) {
+    window.$notify.error(t('messages.operationFailed'))
+  } finally {
+    showEditorModal.value = false
+    isModalClosing.value = false
+  }
+}
+
+// Portal相关方法
+const getPortalBrowserTitle = () => {
+  if (!props.token) return 'Portal'
+  const displayUrl = props.token.tenant_url.replace(/^https?:\/\//, '').replace(/\/$/, '')
+  return `Portal - ${displayUrl}`
+}
+
+
+
 
 const formatExpiryDate = (dateString) => {
   try {
@@ -929,112 +1092,228 @@ const formatExpiryDate = (dateString) => {
   }
 }
 
-// 检查订阅信息
-const checkSubscriptionInfo = async () => {
-  try {
-    console.log('Checking subscription info for unlimited usage...')
-    const hasUnlimited = await invoke('check_subscription_info', {
-      token: props.token.access_token,
-      tenantUrl: props.token.tenant_url
-    })
-    hasUnlimitedUsage.value = hasUnlimited
-    console.log('Subscription check result:', hasUnlimited)
-  } catch (error) {
-    console.error('Failed to check subscription info:', error)
-    hasUnlimitedUsage.value = false
+
+
+// 切换余额颜色模式
+const toggleBalanceColor = () => {
+  // 只有在非异常状态下才允许切换
+  if (!isBalanceClickable.value) {
+    return
   }
+
+  // 切换颜色模式：green <-> blue
+  const currentMode = props.token.balance_color_mode || 'green'
+  props.token.balance_color_mode = currentMode === 'green' ? 'blue' : 'green'
+
+  // 更新时间戳，确保双向同步时使用最新版本
+  props.token.updated_at = new Date().toISOString()
+
+  // 通知父组件有更新，触发保存
+  emit('token-updated')
+}
+
+// 切换跳过检测状态
+const toggleSkipCheck = () => {
+  // 切换 skip_check 状态
+  props.token.skip_check = !props.token.skip_check
+
+  // 更新时间戳，确保双向同步时使用最新版本
+  props.token.updated_at = new Date().toISOString()
+
+  // 关闭菜单
+  showCheckMenu.value = false
+
+  // 通知父组件有更新
+  emit('token-updated')
+
+  // 显示提示
+  const message = props.token.skip_check
+    ? t('messages.checkDisabled')
+    : t('messages.checkEnabled')
+  window.$notify.info(message)
+}
+
+// 深度比对两个对象是否相等
+const isEqual = (obj1, obj2) => {
+  if (obj1 === obj2) return true
+  if (obj1 == null || obj2 == null) return false
+  if (typeof obj1 !== 'object' || typeof obj2 !== 'object') return obj1 === obj2
+
+  const keys1 = Object.keys(obj1)
+  const keys2 = Object.keys(obj2)
+
+  if (keys1.length !== keys2.length) return false
+
+  for (const key of keys1) {
+    if (!keys2.includes(key)) return false
+    if (!isEqual(obj1[key], obj2[key])) return false
+  }
+
+  return true
 }
 
 // 检测账号状态
-const checkAccountStatus = async () => {
-  console.log('checkAccountStatus called')
-  if (isCheckingStatus.value) return
+const checkAccountStatus = async (showNotification = true) => {
+  // 如果禁用了检测，静默返回
+  if (props.token.skip_check) {
+    return
+  }
+
+  // 如果正在检测中，或者批量检测中（且未禁用），则返回
+  if (isCheckingStatus.value || (props.isBatchChecking && !props.token.skip_check)) return
 
   isCheckingStatus.value = true
 
   try {
-    // 并行执行两个操作：账号状态检测和Portal信息获取
-    const promises = []
-
-    // 1. 账号状态检测
-    console.log('Adding account status check promise')
-    const statusCheckPromise = invoke('check_account_status', {
-      token: props.token.access_token,
-      tenantUrl: props.token.tenant_url
+    // 单次API调用同时获取账号状态和Portal信息
+    const batchResults = await invoke('batch_check_tokens_status', {
+      tokens: [{
+        id: props.token.id,
+        access_token: props.token.access_token,
+        tenant_url: props.token.tenant_url,
+        portal_url: props.token.portal_url || null,
+        auth_session: props.token.auth_session || null
+      }]
     })
-    promises.push(statusCheckPromise)
 
-    // 2. Portal信息获取（如果有portal_url）
-    let portalInfoPromise = null
-    if (props.token.portal_url) {
-      console.log('Adding portal info promise')
-      portalInfoPromise = loadPortalInfo(true) // 强制刷新
-      promises.push(portalInfoPromise)
-    } else {
-      console.log('No portal_url, skipping portal info fetch')
-    }
-
-    // 等待所有操作完成
-    const results = await Promise.allSettled(promises)
-
-    // 处理账号状态检测结果
-    const statusResult = results[0]
+    // 处理结果
     let statusMessage = ''
     let statusType = 'info'
+    let hasChanges = false
 
-    if (statusResult.status === 'fulfilled') {
-      const result = statusResult.value
-      console.log('Account status check result:', result)
+    if (batchResults && batchResults.length > 0) {
+      const result = batchResults[0] // 取第一个结果对象
+      const statusResult = result.status_result // 账号状态结果
 
-      // 使用后端返回的具体状态，而不是简单的is_banned判断
-      const banStatus = result.status || (result.is_banned ? 'SUSPENDED' : 'ACTIVE')
+      // 使用后端返回的具体状态
+      const banStatus = statusResult.status
 
-      // 更新本地token对象
-      props.token.ban_status = banStatus
-      // 更新时间戳以确保双向同步时选择正确版本
-      props.token.updated_at = new Date().toISOString()
+      // 比对并更新 access_token
+      if (props.token.access_token !== result.access_token) {
+        props.token.access_token = result.access_token
+        hasChanges = true
+      }
+
+      // 比对并更新 tenant_url
+      if (props.token.tenant_url !== result.tenant_url) {
+        props.token.tenant_url = result.tenant_url
+        hasChanges = true
+      }
+
+      // 比对并更新 ban_status
+      if (props.token.ban_status !== banStatus) {
+        props.token.ban_status = banStatus
+        hasChanges = true
+      }
+
+      // 自动禁用封禁或过期的账号检测
+      if ((banStatus === 'SUSPENDED' || banStatus === 'EXPIRED') && !props.token.skip_check) {
+        props.token.skip_check = true
+        hasChanges = true
+        // 通知父组件有更新，触发保存
+        emit('token-updated')
+        // 显示通知
+        const autoDisableMsg = banStatus === 'SUSPENDED'
+          ? t('messages.autoDisabledBanned')
+          : t('messages.autoDisabledExpired')
+        window.$notify.info(autoDisableMsg)
+      }
+
+      // 比对并更新 suspensions 信息（如果有）
+      if (result.suspensions) {
+        if (!isEqual(props.token.suspensions, result.suspensions)) {
+          props.token.suspensions = result.suspensions
+          hasChanges = true
+          console.log(`Updated suspensions for token ${props.token.id}:`, result.suspensions)
+        }
+      }
+
+      // 比对并更新 Portal 信息（如果有）
+      if (result.portal_info) {
+        const newPortalInfo = {
+          credits_balance: result.portal_info.credits_balance,
+          expiry_date: result.portal_info.expiry_date
+        }
+
+        if (!isEqual(props.token.portal_info, newPortalInfo)) {
+          props.token.portal_info = newPortalInfo
+          hasChanges = true
+
+          // 更新UI显示
+          portalInfo.value = {
+            data: props.token.portal_info,
+            error: null
+          }
+        }
+      } else if (result.portal_error) {
+        // 保存错误信息到 token
+        if (props.token.portal_info !== null) {
+          props.token.portal_info = null
+          hasChanges = true
+        }
+
+        portalInfo.value = {
+          data: null,
+          error: result.portal_error
+        }
+      }
+
+      // 只有在有实际变化时才更新时间戳
+      if (hasChanges) {
+        props.token.updated_at = new Date().toISOString()
+        console.log(`Updated token ${props.token.id} with changes`)
+      } else {
+        console.log(`No changes for token ${props.token.id}, skipping update`)
+      }
 
       // 根据具体状态设置消息
       switch (banStatus) {
         case 'SUSPENDED':
-          statusMessage = '账号已封禁'
+          statusMessage = t('messages.accountBanned')
           statusType = 'error'
           break
+        case 'EXPIRED':
+          statusMessage = t('tokenCard.expired')
+          statusType = 'warning'
+          break
         case 'INVALID_TOKEN':
-          statusMessage = 'Token失效'
+          statusMessage = t('messages.tokenInvalid')
           statusType = 'warning'
           break
         case 'ACTIVE':
-          statusMessage = '账号状态正常'
+          statusMessage = t('messages.accountStatusNormal')
           statusType = 'success'
           break
+        case 'ERROR':
+          statusMessage = `${t('messages.statusCheckFailed')}: ${statusResult.error_message || 'Unknown error'}`
+          statusType = 'error'
+          break
         default:
-          statusMessage = `账号状态: ${banStatus}`
+          statusMessage = `${t('messages.accountStatus')}: ${banStatus}`
           statusType = 'info'
       }
     } else {
-      console.error('Account status check failed:', statusResult.reason)
-      statusMessage = `状态检测失败: ${statusResult.reason}`
+      statusMessage = t('messages.statusCheckFailed') + ': No results returned'
       statusType = 'error'
     }
 
-    // 处理Portal信息获取结果（静默更新，不在通知中显示）
-    if (portalInfoPromise && results.length > 1) {
-      const portalResult = results[1]
-      if (portalResult.status === 'rejected') {
-        console.error('Portal info fetch failed:', portalResult.reason)
-        // 如果有本地数据，继续显示本地数据，不显示错误
-      }
-      // loadPortalInfo方法已经处理了成功和失败的情况
-    }
 
     // 发送账号状态消息（不包含次数信息）
-    const finalMessage = `检测完成：${statusMessage}`
-    emit('copy-success', finalMessage, statusType)
+    if (showNotification) {
+      const finalMessage = `${t('messages.checkComplete')}: ${statusMessage}`
+      window.$notify[statusType](finalMessage)
+    }
 
   } catch (error) {
-    console.error('Account status check failed:', error)
-    emit('copy-success', `检测失败: ${error}`, 'error')
+    // 设置错误状态，让UI显示网络错误
+    portalInfo.value = {
+      data: null,
+      error: String(error)
+    }
+
+    if (showNotification) {
+      window.$notify.error(`${t('messages.checkFailed')}: ${error}`)
+    }
   } finally {
     isCheckingStatus.value = false
     isLoadingPortalInfo.value = false
@@ -1042,15 +1321,20 @@ const checkAccountStatus = async () => {
 }
 
 
-// 移除了防抖，直接调用状态检测方法
 
-// 暴露刷新Portal信息的方法
-const refreshPortalInfo = async () => {
-  if (props.token.portal_url) {
-    return await loadPortalInfo(true) // 强制刷新
+
+// 监听token变化，同步更新Portal信息显示
+watch(() => props.token.portal_info, (newPortalInfo) => {
+  if (newPortalInfo && props.token.portal_url) {
+    portalInfo.value = {
+      data: {
+        credits_balance: newPortalInfo.credits_balance,
+        expiry_date: newPortalInfo.expiry_date
+      },
+      error: null
+    }
   }
-  return Promise.resolve()
-}
+}, { deep: true })
 
 // 组件挂载时加载Portal信息
 onMounted(async () => {
@@ -1060,21 +1344,16 @@ onMounted(async () => {
       portalInfo.value = {
         data: {
           credits_balance: props.token.portal_info.credits_balance,
-          expiry_date: props.token.portal_info.expiry_date,
-          is_active: props.token.portal_info.is_active
+          expiry_date: props.token.portal_info.expiry_date
         },
         error: null
       }
-      // 如果本地数据显示剩余次数为0，检查订阅信息
-      if (props.token.portal_info.credits_balance === 0) {
-        await checkSubscriptionInfo()
-      }
     }
-    // 然后在后台刷新数据
-    loadPortalInfo(false)
+    // 然后在后台刷新数据（静默模式，不显示通知）
+    checkAccountStatus(false)
   }
 
-  // 添加键盘事件监听器
+  // 添加事件监听器
   document.addEventListener('keydown', handleKeydown)
 })
 
@@ -1088,17 +1367,20 @@ const refreshAccountStatus = async () => {
   return await checkAccountStatus()
 }
 
+const handleCreditUsageRefresh = () => {
+  checkAccountStatus(false)
+}
+
 // 暴露方法给父组件
 defineExpose({
-  refreshPortalInfo,
   refreshAccountStatus
 })
 </script>
 
 <style scoped>
 .token-card {
-  background: white;
-  border: 1px solid #e1e5e9;
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-divider, #e1e5e9);
   border-radius: 12px;
   padding: 20px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
@@ -1106,6 +1388,29 @@ defineExpose({
   height: fit-content;
   min-height: 120px;
   position: relative; /* 为状态指示器定位 */
+  z-index: 1;
+}
+
+.token-card.menu-open {
+  z-index: 1000;
+}
+
+/* 高亮动画 */
+.token-card.highlighted {
+  animation: highlight-pulse 1s ease-in-out 3;
+  z-index: 100;
+}
+
+@keyframes highlight-pulse {
+  0% {
+    box-shadow: 0 0 0 3px #fbbf24, 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+  50% {
+    box-shadow: 0 0 0 6px #fbbf24, 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+  100% {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
 }
 
 .status-indicator {
@@ -1113,6 +1418,10 @@ defineExpose({
   top: 8px;
   right: 8px;
   z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
 }
 
 .status-badge {
@@ -1122,35 +1431,52 @@ defineExpose({
   border-radius: 12px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.status-badge.clickable {
+  cursor: pointer;
+}
+
+.status-badge.clickable:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 
 .status-badge.active {
-  background: #d4edda;
-  color: #155724;
-  border: 1px solid #c3e6cb;
+  background: var(--color-success-surface, #d4edda);
+  color: var(--color-success-text, #155724);
+  border: 1px solid var(--color-success-border, #c3e6cb);
 }
 
 .status-badge.inactive {
-  background: #f8d7da;
-  color: #721c24;
-  border: 1px solid #f5c6cb;
+  background: var(--color-danger-surface, #f8d7da);
+  color: var(--color-danger-text, #721c24);
+  border: 1px solid var(--color-danger-border, #f5c6cb);
 }
 
 .status-badge.banned {
-  background: #f8d7da;
-  color: #721c24;
-  border: 1px solid #f5c6cb;
+  background: var(--color-danger-surface, #f8d7da);
+  color: var(--color-danger-text, #721c24);
+  border: 1px solid var(--color-danger-border, #f5c6cb);
 }
 
 .status-badge.invalid {
-  background: #fff3cd;
-  color: #856404;
-  border: 1px solid #ffeaa7;
+  background: var(--color-warning-surface, #fff3cd);
+  color: var(--color-warning-text, #856404);
+  border: 1px solid var(--color-warning-border, #ffeaa7);
+}
+
+.tag-badge {
+  max-width: 160px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .token-card:hover {
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
-  border-color: #3b82f6;
+  border-color: var(--color-accent, #3b82f6);
   transform: translateY(-2px);
 }
 
@@ -1170,7 +1496,7 @@ defineExpose({
   margin: 0 0 6px 0;
   font-size: 16px;
   font-weight: 600;
-  color: #333;
+  color: var(--color-text-heading, #333);
   word-break: break-all;
   line-height: 1.3;
 }
@@ -1191,38 +1517,220 @@ defineExpose({
 
 .portal-row {
   margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.credit-stats-btn {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 4px 6px;
+  cursor: pointer;
+  color: var(--color-btn-primary-bg);
+  transition: background-color 0.2s, border-color 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+
+.credit-stats-btn:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-btn-primary-bg);
+}
+
+.credit-stats-btn svg {
+  display: block;
+  flex-shrink: 0;
 }
 
 .created-date {
   font-size: 12px;
-  color: #666;
+  color: var(--color-text-muted, #666);
+}
+
+/* 邮箱行样式 */
+.email-row {
+  width: 100%;
 }
 
 .email-note-container {
   display: flex;
   align-items: center;
   gap: 6px;
+  width: 100%;
 }
 
 .email-note {
   font-size: 12px;
-  color: #4f46e5;
-  display: flex;
+  color: var(--color-link-visited, #4f46e5);
+  display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: #f0f9ff;
+  background: var(--color-info-surface, #f0f9ff);
   padding: 2px 6px;
   border-radius: 4px;
-  border: 1px solid #e0f2fe;
+  border: 1px solid var(--color-info-surface, #e0f2fe);
   cursor: pointer;
-  transition: all 0.2s ease;
   user-select: none;
+  /* 固定高度避免悬浮时抖动 */
+  min-height: 22px;
+  /* 限制最大宽度,超出显示省略号 */
+  max-width: calc(100% - 30px);
+  overflow: hidden;
+  /* 不使用 transition,避免尺寸变化时的动画导致抖动 */
 }
 
 .email-note:hover {
-  background: #e0f2fe;
-  border-color: #bae6fd;
-  transform: translateY(-1px);
+  background: var(--color-info-surface, #e0f2fe);
+  border-color: var(--color-info-border, #bae6fd);
+  /* 移除 transform 避免抖动 */
+}
+
+/* 邮箱图标固定尺寸,避免抖动 */
+.email-icon {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+}
+
+/* 黑暗模式下的邮箱样式优化 */
+[data-theme='dark'] .email-note {
+  background: rgba(56, 189, 248, 0.2);
+  color: #93c5fd;
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+[data-theme='dark'] .email-note:hover {
+  background: rgba(56, 189, 248, 0.3);
+  border-color: rgba(56, 189, 248, 0.6);
+  color: #bfdbfe;
+}
+
+/* 黑暗模式下的按钮样式优化 */
+[data-theme='dark'] .btn-action {
+  background: rgba(51, 65, 85, 0.5);
+  border-color: rgba(71, 85, 105, 0.6);
+  color: #cbd5e1;
+}
+
+[data-theme='dark'] .btn-action:hover {
+  background: rgba(71, 85, 105, 0.6);
+  border-color: rgba(100, 116, 139, 0.7);
+}
+
+[data-theme='dark'] .btn-action.delete {
+  color: #fca5a5;
+}
+
+[data-theme='dark'] .btn-action.delete:hover {
+  background: rgba(220, 38, 38, 0.2);
+  border-color: rgba(220, 38, 38, 0.4);
+}
+
+[data-theme='dark'] .btn-action.portal {
+  color: #93c5fd;
+}
+
+[data-theme='dark'] .btn-action.portal:hover {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+[data-theme='dark'] .btn-action.edit {
+  color: #86efac;
+}
+
+[data-theme='dark'] .btn-action.edit:hover {
+  background: rgba(34, 197, 94, 0.2);
+  border-color: rgba(34, 197, 94, 0.4);
+}
+
+[data-theme='dark'] .btn-action.vscode {
+  color: #7dd3fc;
+}
+
+[data-theme='dark'] .btn-action.vscode:hover {
+  background: rgba(14, 165, 233, 0.2);
+  border-color: rgba(14, 165, 233, 0.4);
+}
+
+[data-theme='dark'] .btn-action.status-check {
+  color: #fcd34d;
+}
+
+[data-theme='dark'] .btn-action.status-check:hover {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+[data-theme='dark'] .btn-action.copy {
+  color: #93c5fd;
+}
+
+[data-theme='dark'] .btn-action.copy:hover {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+[data-theme='dark'] .btn-action.export {
+  color: #c4b5fd;
+}
+
+[data-theme='dark'] .btn-action.export:hover {
+  background: rgba(124, 58, 237, 0.2);
+  border-color: rgba(124, 58, 237, 0.4);
+}
+
+[data-theme='dark'] .copy-dropdown {
+  background: var(--color-surface, #1f2937);
+  border-color: rgba(75, 85, 99, 0.6);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme='dark'] .copy-menu-item {
+  color: var(--color-text-primary, #e5e7eb);
+}
+
+[data-theme='dark'] .copy-menu-item:hover {
+  background: rgba(55, 65, 81, 0.6);
+}
+
+/* 暗黑模式下的余额颜色 */
+[data-theme='dark'] .portal-meta.balance.color-green {
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.2);
+}
+
+[data-theme='dark'] .portal-meta.balance.color-green:hover {
+  background: rgba(34, 197, 94, 0.3);
+}
+
+[data-theme='dark'] .portal-meta.balance.color-blue {
+  color: #f9a8d4;
+  background: rgba(236, 72, 153, 0.2);
+}
+
+[data-theme='dark'] .portal-meta.balance.color-blue:hover {
+  background: rgba(236, 72, 153, 0.3);
+}
+
+[data-theme='dark'] .portal-meta.balance.exhausted {
+  color: #fca5a5;
+  background: rgba(220, 38, 38, 0.2);
+}
+
+[data-theme='dark'] .credit-stats-btn {
+  border-color: rgba(148, 163, 184, 0.35);
+  color: #a78bfa;
+}
+
+[data-theme='dark'] .credit-stats-btn:hover {
+  background: rgba(124, 58, 237, 0.2);
+  border-color: rgba(124, 58, 237, 0.4);
 }
 
 .email-icon {
@@ -1235,21 +1743,29 @@ defineExpose({
   border: none;
   padding: 2px;
   cursor: pointer;
-  color: #6b7280;
+  color: var(--color-text-muted, #6b7280);
   border-radius: 3px;
-  transition: all 0.2s ease;
+  transition: background 0.2s ease, color 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
+  /* 固定尺寸避免抖动 */
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
 }
 
 .copy-email-btn:hover {
-  background: #f3f4f6;
-  color: #4f46e5;
+  background: var(--color-surface-hover, #f3f4f6);
+  color: var(--color-link-visited, #4f46e5);
 }
 
 .copy-email-btn:active {
   transform: scale(0.95);
+}
+
+.copy-email-btn svg {
+  flex-shrink: 0;
 }
 
 .portal-meta {
@@ -1260,29 +1776,50 @@ defineExpose({
 }
 
 .portal-meta.loading {
-  color: #6c757d;
+  color: var(--color-text-muted, #6c757d);
   font-style: italic;
 }
 
 .portal-meta.error {
-  color: #dc3545;
-  background: #f8d7da;
+  color: var(--color-danger-bg, #dc3545);
+  background: var(--color-danger-surface, #f8d7da);
 }
 
 .portal-meta.expiry {
-  color: #856404;
-  background: #fff3cd;
+  color: var(--color-warning-text, #856404);
+  background: var(--color-warning-surface, #fff3cd);
 }
 
 .portal-meta.balance {
-  color: #155724;
-  background: #d4edda;
   font-weight: 600;
+  transition: all 0.2s ease;
 }
 
+/* 绿色模式（默认） */
+.portal-meta.balance.color-green {
+  color: var(--color-success-text, #155724);
+  background: var(--color-success-surface, #d4edda);
+}
+
+.portal-meta.balance.color-green:hover {
+  background: #c3e6cb;
+}
+
+/* 粉色模式 */
+.portal-meta.balance.color-blue {
+  color: #be185d;
+  background: #fce7f3;
+}
+
+.portal-meta.balance.color-blue:hover {
+  background: #fbcfe8;
+}
+
+/* 异常状态（红色，不可切换） */
 .portal-meta.balance.exhausted {
-  color: #721c24;
-  background: #f8d7da;
+  color: var(--color-danger-text, #721c24);
+  background: var(--color-danger-surface, #f8d7da);
+  cursor: default !important;
 }
 
 
@@ -1299,12 +1836,12 @@ defineExpose({
 }
 
 .btn-action {
-  background: #f8f9fa;
-  border: 1px solid #dee2e6;
+  background: rgba(148, 163, 184, 0.15);
+  border: 1px solid rgba(148, 163, 184, 0.3);
   border-radius: 8px;
   padding: 8px;
   cursor: pointer;
-  color: #495057;
+  color: #64748b;
   transition: all 0.2s;
   display: flex;
   align-items: center;
@@ -1314,60 +1851,86 @@ defineExpose({
   flex-shrink: 0;
 }
 
+/* 防止按钮内的 SVG 图标在 hover 时抖动 */
+.btn-action svg,
+.btn-action img {
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-font-smoothing: subpixel-antialiased;
+}
+
 .btn-action:hover {
-  background: #e9ecef;
-  border-color: #adb5bd;
+  background: rgba(148, 163, 184, 0.25);
+  border-color: rgba(148, 163, 184, 0.5);
   transform: translateY(-1px);
 }
 
 .btn-action.delete {
-  color: #dc3545;
+  color: #dc2626;
 }
 
 .btn-action.delete:hover {
-  background: #f8d7da;
-  border-color: #f5c6cb;
+  background: rgba(220, 38, 38, 0.15);
+  border-color: rgba(220, 38, 38, 0.3);
 }
 
 .btn-action.portal {
-  color: #007bff;
+  color: #2563eb;
 }
 
 .btn-action.portal:hover {
-  background: #e3f2fd;
-  border-color: #90caf9;
+  background: rgba(37, 99, 235, 0.15);
+  border-color: rgba(37, 99, 235, 0.3);
 }
 
 .btn-action.edit {
-  color: #28a745;
+  color: #16a34a;
 }
 
 .btn-action.edit:hover {
-  background: #d4edda;
-  border-color: #c3e6cb;
+  background: rgba(22, 163, 74, 0.15);
+  border-color: rgba(22, 163, 74, 0.3);
 }
 
 .btn-action.vscode {
-  color: #007acc;
+  color: #0284c7;
 }
 
 .btn-action.vscode:hover {
-  background: #e3f2fd;
-  border-color: #90caf9;
+  background: rgba(2, 132, 199, 0.15);
+  border-color: rgba(2, 132, 199, 0.3);
 }
 
 .btn-action.status-check {
-  color: #ffc107;
+  color: #ca8a04;
 }
 
 .btn-action.status-check:hover {
-  background: #fff3cd;
-  border-color: #ffeaa7;
+  background: rgba(202, 138, 4, 0.15);
+  border-color: rgba(202, 138, 4, 0.3);
 }
 
 .btn-action.status-check.loading {
   opacity: 0.7;
   cursor: not-allowed;
+}
+
+.btn-action.export {
+  color: #7c3aed;
+}
+
+.btn-action.export:hover {
+  background: rgba(124, 58, 237, 0.15);
+  border-color: rgba(124, 58, 237, 0.3);
+}
+
+.btn-action.copy {
+  color: #2563eb;
+}
+
+.btn-action.copy:hover {
+  background: rgba(37, 99, 235, 0.15);
+  border-color: rgba(37, 99, 235, 0.3);
 }
 
 .loading-spinner {
@@ -1383,6 +1946,130 @@ defineExpose({
   to {
     transform: rotate(360deg);
   }
+}
+
+/* 复制菜单样式 */
+.copy-menu-wrapper {
+  position: relative;
+}
+
+.copy-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-divider, #e1e5e9);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 180px;
+  overflow: hidden;
+  z-index: 1001; /* 比 token-card.menu-open 的 z-index: 1000 更高 */
+}
+
+.copy-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--color-text-primary, #374151);
+  transition: background 0.2s ease;
+  text-align: left;
+  font-family: inherit;
+}
+
+.copy-menu-item:hover {
+  background: var(--color-surface-hover, #f3f4f6);
+}
+
+.copy-menu-item svg {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.copy-menu-item span {
+  flex: 1;
+}
+
+/* 检测菜单样式 - 复用复制菜单样式 */
+.check-menu-wrapper {
+  position: relative;
+}
+
+.check-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-divider, #e1e5e9);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 180px;
+  overflow: hidden;
+  z-index: 1001; /* 比 token-card.menu-open 的 z-index: 1000 更高 */
+}
+
+.check-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--color-text-primary, #374151);
+  transition: background 0.2s ease;
+  text-align: left;
+  font-family: inherit;
+}
+
+.check-menu-item:hover {
+  background: var(--color-surface-hover, #f3f4f6);
+}
+
+.check-menu-item svg {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.check-menu-item span {
+  flex: 1;
+}
+
+/* 禁用检测时的按钮样式 */
+.btn-action.status-check.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-action.status-check.disabled:hover {
+  background: rgba(148, 163, 184, 0.15);
+  border-color: rgba(148, 163, 184, 0.3);
+  transform: none;
+}
+
+/* 下拉菜单动画 */
+.dropdown-enter-active,
+.dropdown-leave-active {
+  transition: all 0.2s ease;
+}
+
+.dropdown-enter-from,
+.dropdown-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.dropdown-enter-to,
+.dropdown-leave-from {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 /* Vue 过渡动画 */
@@ -1419,13 +2106,13 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 9999;
+  z-index: 2100;
   backdrop-filter: blur(2px);
   pointer-events: auto;
 }
 
 .editor-modal {
-  background: white;
+  background: var(--color-surface, #ffffff);
   border-radius: 12px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   max-width: 700px;
@@ -1443,14 +2130,14 @@ defineExpose({
   justify-content: space-between;
   align-items: center;
   padding: 20px 24px 16px;
-  border-bottom: 1px solid #e1e5e9;
+  border-bottom: 1px solid var(--color-divider, #e1e5e9);
 }
 
 .modal-header h3 {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
-  color: #333;
+  color: var(--color-text-heading, #333);
 }
 
 .modal-close {
@@ -1458,7 +2145,7 @@ defineExpose({
   border: none;
   padding: 4px;
   cursor: pointer;
-  color: #666;
+  color: var(--color-text-muted, #666);
   border-radius: 4px;
   transition: all 0.2s ease;
   display: flex;
@@ -1467,8 +2154,8 @@ defineExpose({
 }
 
 .modal-close:hover {
-  background: #f3f4f6;
-  color: #333;
+  background: var(--color-surface-hover, #f3f4f6);
+  color: var(--color-text-heading, #333);
 }
 
 .modal-content {
@@ -1482,7 +2169,7 @@ defineExpose({
 .editor-section {
   margin-bottom: 24px;
   padding-bottom: 24px;
-  border-bottom: 1px solid #e1e5e9;
+  border-bottom: 1px solid var(--color-divider, #e1e5e9);
 }
 
 .editor-section:last-child {
@@ -1508,9 +2195,9 @@ defineExpose({
   align-items: center;
   gap: 16px;
   padding: 16px;
-  border: 2px solid #e1e5e9;
+  border: 2px solid var(--color-divider, #e1e5e9);
   border-radius: 8px;
-  background: white;
+  background: var(--color-surface, #ffffff);
   cursor: pointer;
   transition: all 0.15s ease;
   text-align: left;
@@ -1525,13 +2212,13 @@ defineExpose({
 }
 
 .editor-option:hover {
-  border-color: #3b82f6;
-  background: #f8fafc;
+  border-color: var(--color-accent, #3b82f6);
+  background: var(--color-surface-soft, #f8fafc);
   box-shadow: 0 2px 8px rgba(59, 130, 246, 0.12);
 }
 
 .editor-option:active {
-  background: #f1f5f9;
+  background: var(--color-surface-soft, #f1f5f9);
   box-shadow: 0 1px 4px rgba(59, 130, 246, 0.08);
 }
 
@@ -1542,7 +2229,7 @@ defineExpose({
 }
 
 .editor-option:focus {
-  outline: 2px solid #3b82f6;
+  outline: 2px solid var(--color-accent, #3b82f6);
   outline-offset: 2px;
 }
 
@@ -1554,8 +2241,8 @@ defineExpose({
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  background: #f8f9fa;
-  border: 1px solid #e9ecef;
+  background: var(--color-surface-muted, #f8f9fa);
+  border: 1px solid var(--color-surface-muted, #e9ecef);
 }
 
 .editor-icon img {
@@ -1565,13 +2252,13 @@ defineExpose({
 }
 
 .cursor-option .editor-icon {
-  background: #f0f9ff;
-  border-color: #e0f2fe;
+  background: var(--color-info-surface, #f0f9ff);
+  border-color: var(--color-info-surface, #e0f2fe);
 }
 
 .vscode-option .editor-icon {
-  background: #f0f9ff;
-  border-color: #e0f2fe;
+  background: var(--color-info-surface, #f0f9ff);
+  border-color: var(--color-info-surface, #e0f2fe);
 }
 
 .kiro-option .editor-icon,
@@ -1580,8 +2267,8 @@ defineExpose({
 .qoder-option .editor-icon,
 .vscodium-option .editor-icon,
 .codebuddy-option .editor-icon {
-  background: #f0f9ff;
-  border-color: #e0f2fe;
+  background: var(--color-info-surface, #f0f9ff);
+  border-color: var(--color-info-surface, #e0f2fe);
 }
 
 .idea-option .editor-icon,
@@ -1596,8 +2283,8 @@ defineExpose({
 .rider-option .editor-icon,
 .rubymine-option .editor-icon,
 .aqua-option .editor-icon {
-  background: #f0f9ff;
-  border-color: #e0f2fe;
+  background: var(--color-info-surface, #f0f9ff);
+  border-color: var(--color-info-surface, #e0f2fe);
 }
 
 .editor-info {
@@ -1610,7 +2297,7 @@ defineExpose({
 .editor-name {
   font-size: 16px;
   font-weight: 600;
-  color: #333;
+  color: var(--color-text-heading, #333);
 }
 
 
@@ -1723,5 +2410,292 @@ defineExpose({
   }
 }
 
+/* Suspensions 模态框样式 */
+.suspensions-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: 20px;
+}
+
+.suspensions-modal {
+  background: var(--color-surface, #ffffff);
+  border-radius: 12px;
+  max-width: 600px;
+  width: 100%;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+}
+
+.suspensions-modal .modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--color-divider, #e1e5e9);
+}
+
+.suspensions-modal .modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-text-primary, #374151);
+}
+
+.suspensions-modal .modal-close {
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--color-text-muted, #6b7280);
+  border-radius: 4px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.suspensions-modal .modal-close:hover {
+  background: var(--color-surface-hover, #f3f4f6);
+  color: var(--color-text-primary, #374151);
+}
+
+.suspensions-modal .modal-body {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.suspensions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.suspension-item {
+  background: var(--color-surface-secondary, #f9fafb);
+  border: 1px solid var(--color-divider, #e1e5e9);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.suspension-field {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.suspension-field:last-child {
+  margin-bottom: 0;
+}
+
+.suspension-field strong {
+  color: var(--color-text-secondary, #6b7280);
+  font-size: 14px;
+  min-width: 80px;
+}
+
+.suspension-value {
+  color: var(--color-text-primary, #374151);
+  font-size: 14px;
+  word-break: break-word;
+}
+
+.no-suspensions {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--color-text-muted, #9ca3af);
+}
+
+.raw-json {
+  margin-top: 20px;
+  border-top: 1px solid var(--color-divider, #e1e5e9);
+  padding-top: 16px;
+}
+
+.raw-json summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-secondary, #6b7280);
+  padding: 8px 0;
+  user-select: none;
+}
+
+.raw-json summary:hover {
+  color: var(--color-text-primary, #374151);
+}
+
+.raw-json pre {
+  background: var(--color-surface-secondary, #f9fafb);
+  border: 1px solid var(--color-divider, #e1e5e9);
+  border-radius: 6px;
+  padding: 12px;
+  margin: 8px 0 0 0;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-primary, #374151);
+}
+
+/* 黑暗模式 */
+[data-theme='dark'] .suspensions-modal {
+  background: var(--color-surface, #1f2937);
+}
+
+[data-theme='dark'] .suspension-item {
+  background: rgba(55, 65, 81, 0.5);
+  border-color: rgba(75, 85, 99, 0.6);
+}
+
+[data-theme='dark'] .raw-json pre {
+  background: rgba(55, 65, 81, 0.5);
+  border-color: rgba(75, 85, 99, 0.6);
+}
+
+/* Trae 版本选择对话框样式 */
+.trae-version-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: 20px;
+}
+
+.trae-version-modal {
+  background: var(--color-surface, #ffffff);
+  border-radius: 12px;
+  max-width: 500px;
+  width: 100%;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+}
+
+.trae-version-modal .modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--color-divider, #e1e5e9);
+}
+
+.trae-version-modal .modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-text-primary, #374151);
+}
+
+.trae-version-modal .modal-close {
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--color-text-muted, #6b7280);
+  border-radius: 4px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.trae-version-modal .modal-close:hover {
+  background: var(--color-surface-hover, #f3f4f6);
+  color: var(--color-text-primary, #374151);
+}
+
+.trae-version-modal .modal-body {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.version-options {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.version-option {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  border: 2px solid var(--color-divider, #e1e5e9);
+  border-radius: 12px;
+  background: var(--color-surface, #ffffff);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+}
+
+.version-option:hover {
+  border-color: var(--color-accent, #3b82f6);
+  background: var(--color-surface-soft, #f8fafc);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+  transform: translateY(-2px);
+}
+
+.version-option:active {
+  transform: translateY(0);
+}
+
+.version-icon {
+  font-size: 32px;
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface-muted, #f8f9fa);
+  border-radius: 8px;
+}
+
+.version-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-heading, #333);
+}
+
+/* 黑暗模式 */
+[data-theme='dark'] .trae-version-modal {
+  background: var(--color-surface, #1f2937);
+}
+
+[data-theme='dark'] .version-option {
+  background: rgba(55, 65, 81, 0.5);
+  border-color: rgba(75, 85, 99, 0.6);
+}
+
+[data-theme='dark'] .version-option:hover {
+  background: rgba(55, 65, 81, 0.7);
+  border-color: rgba(59, 130, 246, 0.6);
+}
+
+[data-theme='dark'] .version-icon {
+  background: rgba(55, 65, 81, 0.8);
+}
 
 </style>

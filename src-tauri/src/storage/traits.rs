@@ -10,8 +10,14 @@ pub struct TokenData {
     pub updated_at: DateTime<Utc>,
     pub portal_url: Option<String>,
     pub email_note: Option<String>,
+    pub tag_name: Option<String>,
+    pub tag_color: Option<String>,
     pub ban_status: Option<serde_json::Value>,
     pub portal_info: Option<serde_json::Value>,
+    pub auth_session: Option<String>,
+    pub suspensions: Option<serde_json::Value>,
+    pub balance_color_mode: Option<String>,
+    pub skip_check: Option<bool>,
 }
 
 impl TokenData {
@@ -31,8 +37,14 @@ impl TokenData {
             updated_at: now,
             portal_url,
             email_note,
+            tag_name: None,
+            tag_color: None,
             ban_status: None,
             portal_info: None,
+            auth_session: None,
+            suspensions: None,
+            balance_color_mode: None,
+            skip_check: None,
         }
     }
 
@@ -72,13 +84,15 @@ pub trait TokenStorage: Send + Sync {
 #[async_trait::async_trait]
 pub trait SyncManager: Send + Sync {
     async fn sync_local_to_remote(&self) -> Result<SyncStatus, Box<dyn std::error::Error + Send + Sync>>;
-    
+
     async fn sync_remote_to_local(&self) -> Result<SyncStatus, Box<dyn std::error::Error + Send + Sync>>;
-    
+
     async fn bidirectional_sync(&self) -> Result<SyncStatus, Box<dyn std::error::Error + Send + Sync>>;
-    
+
+    async fn bidirectional_sync_with_tokens(&self, local_tokens: Vec<TokenData>) -> Result<SyncStatus, Box<dyn std::error::Error + Send + Sync>>;
+
     async fn get_sync_status(&self) -> Result<Option<SyncStatus>, Box<dyn std::error::Error + Send + Sync>>;
-    
+
     async fn resolve_conflicts(&self, local_tokens: Vec<TokenData>, remote_tokens: Vec<TokenData>) -> Result<Vec<TokenData>, Box<dyn std::error::Error + Send + Sync>>;
 }
 
@@ -119,8 +133,25 @@ pub fn convert_legacy_token(legacy: &serde_json::Value) -> Result<TokenData, Box
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
+    let tag_name = legacy.get("tag_name")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let tag_color = legacy.get("tag_color")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
     let ban_status = legacy.get("ban_status").cloned();
     let portal_info = legacy.get("portal_info").cloned();
+    let auth_session = legacy.get("auth_session")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let suspensions = legacy.get("suspensions").cloned();
+    let balance_color_mode = legacy.get("balance_color_mode")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let skip_check = legacy.get("skip_check")
+        .and_then(|v| v.as_bool());
 
     Ok(TokenData {
         id,
@@ -130,8 +161,14 @@ pub fn convert_legacy_token(legacy: &serde_json::Value) -> Result<TokenData, Box
         updated_at,
         portal_url,
         email_note,
+        tag_name,
+        tag_color,
         ban_status,
         portal_info,
+        auth_session,
+        suspensions,
+        balance_color_mode,
+        skip_check,
     })
 }
 
@@ -153,6 +190,14 @@ pub fn convert_to_legacy_format(token: &TokenData) -> serde_json::Value {
         map.insert("email_note".to_string(), serde_json::Value::String(email_note.clone()));
     }
     
+    if let Some(tag_name) = &token.tag_name {
+        map.insert("tag_name".to_string(), serde_json::Value::String(tag_name.clone()));
+    }
+
+    if let Some(tag_color) = &token.tag_color {
+        map.insert("tag_color".to_string(), serde_json::Value::String(tag_color.clone()));
+    }
+    
     if let Some(ban_status) = &token.ban_status {
         map.insert("ban_status".to_string(), ban_status.clone());
     }
@@ -160,7 +205,23 @@ pub fn convert_to_legacy_format(token: &TokenData) -> serde_json::Value {
     if let Some(portal_info) = &token.portal_info {
         map.insert("portal_info".to_string(), portal_info.clone());
     }
-    
+
+    if let Some(auth_session) = &token.auth_session {
+        map.insert("auth_session".to_string(), serde_json::Value::String(auth_session.clone()));
+    }
+
+    if let Some(suspensions) = &token.suspensions {
+        map.insert("suspensions".to_string(), suspensions.clone());
+    }
+
+    if let Some(balance_color_mode) = &token.balance_color_mode {
+        map.insert("balance_color_mode".to_string(), serde_json::Value::String(balance_color_mode.clone()));
+    }
+
+    if let Some(skip_check) = token.skip_check {
+        map.insert("skip_check".to_string(), serde_json::Value::Bool(skip_check));
+    }
+
     serde_json::Value::Object(map)
 }
 
@@ -183,6 +244,8 @@ mod tests {
         assert_eq!(token.access_token, "test_token");
         assert_eq!(token.portal_url, Some("https://portal.example.com".to_string()));
         assert_eq!(token.email_note, Some("test note".to_string()));
+        assert!(token.tag_name.is_none());
+        assert!(token.tag_color.is_none());
         assert!(token.created_at <= Utc::now());
         assert!(token.updated_at <= Utc::now());
     }
@@ -202,6 +265,8 @@ mod tests {
         assert_eq!(token.id, "test_id");
         assert_eq!(token.tenant_url, "https://example.com");
         assert_eq!(token.access_token, "test_token");
+        assert!(token.tag_name.is_none());
+        assert!(token.tag_color.is_none());
         
         let converted_back = convert_to_legacy_format(&token);
         assert_eq!(converted_back["id"], "test_id");
